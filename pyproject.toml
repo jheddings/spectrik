@@ -1,0 +1,55 @@
+[project]
+name = "spectrik"
+version = "0.1.0"
+description = "A generic specification and blueprint pattern for declarative configuration-as-code tools."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.12",
+    "python-hcl2>=7.3",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "ruff>=0.15.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spectrik"]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "C", "B", "G", "RET", "ERA", "UP", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["spectrik"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["src"]
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
