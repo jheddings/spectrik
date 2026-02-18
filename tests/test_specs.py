@@ -16,6 +16,7 @@ class FakeProject(BaseModel):
 
 # -- Concrete spec for testing --
 
+
 class AlwaysEqual(Specification["FakeProject"]):
     def equals(self, ctx: Context[FakeProject]) -> bool:
         return True
@@ -63,6 +64,7 @@ def _make_ctx(dry_run: bool = False) -> Context[FakeProject]:
 
 # -- Specification tests --
 
+
 class TestSpecification:
     def test_exists_defaults_to_equals(self):
         s = AlwaysEqual()
@@ -77,6 +79,7 @@ class TestSpecification:
 
 
 # -- Present tests --
+
 
 class TestPresent:
     def test_skips_when_exists(self):
@@ -102,6 +105,7 @@ class TestPresent:
 
 # -- Ensure tests --
 
+
 class TestEnsure:
     def test_skips_when_equal(self):
         s = AlwaysEqual()
@@ -125,6 +129,7 @@ class TestEnsure:
 
 
 # -- Absent tests --
+
 
 class TestAbsent:
     def test_removes_when_exists(self):
@@ -150,6 +155,7 @@ class TestAbsent:
 
 
 # -- Logging tests --
+
 
 class TestSpecOpLogging:
     def test_present_logs_skip(self, caplog):
@@ -196,6 +202,7 @@ class TestSpecOpLogging:
 
 
 # -- @spec() decorator tests --
+
 
 class TestSpecDecorator:
     def test_registers_class(self):

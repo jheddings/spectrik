@@ -76,9 +76,7 @@ def _parse_ops(
         for spec_block in block_data.get(strategy_name, []):
             # Each spec_block is {"spec_name": {attrs}}
             for spec_name, attrs in spec_block.items():
-                spec_instance = _decode_spec(
-                    spec_name, dict(attrs), resolve_attrs=resolve_attrs
-                )
+                spec_instance = _decode_spec(spec_name, dict(attrs), resolve_attrs=resolve_attrs)
                 ops.append(strategy_cls(spec_instance))
     return ops
 
@@ -141,9 +139,7 @@ def load_blueprints(
 
     resolved: dict[str, Blueprint] = {}
     for name in pending:
-        _resolve_blueprint(
-            name, pending, resolved, set(), resolve_attrs=resolve_attrs
-        )
+        _resolve_blueprint(name, pending, resolved, set(), resolve_attrs=resolve_attrs)
 
     return resolved
 
@@ -164,8 +160,11 @@ def load_projects[P: Project](
         for proj_block in doc.get("project", []):
             for proj_name, proj_data in proj_block.items():
                 projects[proj_name] = _build_project(
-                    proj_name, proj_data, blueprints,
-                    project_type=project_type, resolve_attrs=resolve_attrs,
+                    proj_name,
+                    proj_data,
+                    blueprints,
+                    project_type=project_type,
+                    resolve_attrs=resolve_attrs,
                 )
 
     return projects
@@ -184,9 +183,7 @@ def _build_project[P: Project](
     proj_blueprints: list[Blueprint] = []
     for bp_name in data.get("use", []):
         if bp_name not in blueprints:
-            raise ValueError(
-                f"Project '{name}' references unknown blueprint: '{bp_name}'"
-            )
+            raise ValueError(f"Project '{name}' references unknown blueprint: '{bp_name}'")
         proj_blueprints.append(blueprints[bp_name])
 
     # Parse inline spec ops into an anonymous blueprint

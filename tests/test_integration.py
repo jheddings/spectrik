@@ -52,20 +52,30 @@ class TestEndToEnd:
 
     def test_full_pipeline(self, tmp_path):
         """Load HCL, build project, verify specs executed."""
-        _write_hcl(tmp_path, "blueprints", "base.hcl", '''
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "base.hcl",
+            """
             blueprint "base" {
                 ensure "counter" { id = "1" }
                 ensure "counter" { id = "2" }
             }
-        ''')
-        _write_hcl(tmp_path, "projects", "app.hcl", '''
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "app.hcl",
+            """
             project "myapp" {
                 description = "Test app"
                 repo = "owner/myapp"
                 use = ["base"]
                 ensure "counter" { id = "3" }
             }
-        ''')
+        """,
+        )
 
         blueprints = load_blueprints(tmp_path)
         projects = load_projects(tmp_path, blueprints, project_type=AppProject)
@@ -78,16 +88,26 @@ class TestEndToEnd:
 
     def test_full_pipeline_dry_run(self, tmp_path):
         """Dry run should not apply any specs."""
-        _write_hcl(tmp_path, "blueprints", "base.hcl", '''
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "base.hcl",
+            """
             blueprint "base" {
                 ensure "counter" { id = "1" }
             }
-        ''')
-        _write_hcl(tmp_path, "projects", "app.hcl", '''
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "app.hcl",
+            """
             project "myapp" {
                 use = ["base"]
             }
-        ''')
+        """,
+        )
 
         blueprints = load_blueprints(tmp_path)
         projects = load_projects(tmp_path, blueprints, project_type=AppProject)
