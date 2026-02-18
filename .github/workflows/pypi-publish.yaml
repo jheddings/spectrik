@@ -1,25 +1,25 @@
-    # Publish to PyPI when a new release is published
-    ---
-    name: Publish packages to PyPI
+# Publish to PyPI when a new release is published
+---
+name: Publish packages to PyPI
 
-    on:
-      release:
-        types: [released]
+on:
+  release:
+    types: [released]
 
-    jobs:
-      pypi-publish:
-        name: Publish package to PyPI
-        runs-on: ubuntu-latest
+jobs:
+  pypi-publish:
+    name: Publish package to PyPI
+    runs-on: ubuntu-latest
 
-        steps:
-          - uses: actions/checkout@v5.0.0
-          - name: Setup uv w/ default python
-            uses: astral-sh/setup-uv@v6
-          - name: Install build dependencies
-            run: uv sync --all-extras
-          - name: Build the project
-            run: uv build
-          - name: Publish to PyPI
-            run: uv publish
-            env:
-              UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Setup uv w/ default python
+        uses: astral-sh/setup-uv@v7
+      - name: Install build dependencies
+        run: uv sync --all-extras
+      - name: Build the project
+        run: uv build
+      - name: Publish to PyPI
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
