@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from spectrik.context import Context
-from spectrik.hcl import load, load_blueprints, load_projects, scan
+from spectrik.hcl import load, scan
 from spectrik.projects import Project
-from spectrik.specs import Specification, _spec_registry
+from spectrik.spec import Specification, _spec_registry
 from spectrik.workspace import Workspace
 
 # -- Test fixtures --
@@ -80,270 +80,106 @@ class TestLoad:
         assert "blueprint" in result
 
 
+# -- hcl.scan() convenience function tests --
+
+
 class TestScan:
-    def test_scan_directory(self, tmp_path):
+    def test_scan_returns_workspace(self, tmp_path):
         _write_hcl(
             tmp_path,
-            "bps",
-            "a.hcl",
-            """
-            blueprint "alpha" {}
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "bps",
-            "b.hcl",
-            """
-            blueprint "beta" {}
-        """,
-        )
-        results = scan(tmp_path / "bps")
-        assert len(results) == 2
-
-    def test_scan_sorted_order(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "bps",
-            "z.hcl",
-            """
-            blueprint "zulu" {}
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "bps",
-            "a.hcl",
-            """
-            blueprint "alpha" {}
-        """,
-        )
-        results = scan(tmp_path / "bps")
-        assert len(results) == 2
-
-    def test_scan_empty_dir(self, tmp_path):
-        d = tmp_path / "empty"
-        d.mkdir()
-        results = scan(d)
-        assert results == []
-
-    def test_scan_missing_dir(self, tmp_path):
-        results = scan(tmp_path / "nonexistent")
-        assert results == []
-
-
-# -- Blueprint loading tests --
-
-
-class TestLoadBlueprints:
-    def test_simple_blueprint(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
-            blueprint "simple" {
-                ensure "widget" {
-                    color = "blue"
-                }
-            }
+            project "myproj" { description = "test" }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        assert "simple" in bps
-        assert len(bps["simple"].ops) == 1
+        ws = scan(tmp_path)
+        assert isinstance(ws, Workspace)
+        assert "myproj" in ws
 
-    def test_multiple_strategies(self, tmp_path):
+    def test_scan_with_custom_project_type(self, tmp_path):
         _write_hcl(
             tmp_path,
-            "blueprints",
-            "test.hcl",
-            """
-            blueprint "multi" {
-                present "widget" { color = "red" }
-                ensure "widget" { color = "green" }
-                absent "widget" { color = "blue" }
-            }
-        """,
-        )
-        bps = load_blueprints(tmp_path)
-        assert len(bps["multi"].ops) == 3
-
-    def test_blueprint_include(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "blueprints",
-            "a_base.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "blueprints",
-            "b_derived.hcl",
-            """
-            blueprint "derived" {
-                include = ["base"]
-                ensure "widget" { color = "blue" }
-            }
-        """,
-        )
-        bps = load_blueprints(tmp_path)
-        assert "derived" in bps
-        # included ops come first, then own ops
-        assert len(bps["derived"].ops) == 2
-
-    def test_unknown_spec_raises(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "blueprints",
-            "test.hcl",
-            """
-            blueprint "bad" {
-                ensure "nonexistent_spec" {
-                    foo = "bar"
-                }
-            }
-        """,
-        )
-        with pytest.raises(ValueError, match="nonexistent_spec"):
-            load_blueprints(tmp_path)
-
-    def test_empty_blueprint(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "blueprints",
-            "test.hcl",
-            """
-            blueprint "empty" {}
-        """,
-        )
-        bps = load_blueprints(tmp_path)
-        assert "empty" in bps
-        assert len(bps["empty"].ops) == 0
-
-
-# -- Project loading tests --
-
-
-class TestLoadProjects:
-    def test_simple_project(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
+            ".",
             "test.hcl",
             """
             project "myproj" {
-                description = "A test project"
-            }
-        """,
-        )
-        projs = load_projects(tmp_path, blueprints={})
-        assert "myproj" in projs
-        assert projs["myproj"].description == "A test project"
-
-    def test_project_use_blueprints(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "blueprints",
-            "test.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                use = ["base"]
-            }
-        """,
-        )
-        bps = load_blueprints(tmp_path)
-        projs = load_projects(tmp_path, bps)
-        assert len(projs["myproj"].blueprints) == 1
-        assert projs["myproj"].blueprints[0].name == "base"
-
-    def test_project_inline_specs(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
-        projs = load_projects(tmp_path, blueprints={})
-        assert len(projs["myproj"].blueprints) == 1
-
-    def test_project_custom_type(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                description = "test"
                 repo = "owner/repo"
                 homepage = "https://example.com"
             }
         """,
         )
-        projs = load_projects(tmp_path, blueprints={}, project_type=SampleProject)
-        proj = projs["myproj"]
+        ws = scan(tmp_path, project_type=SampleProject)
+        proj = ws["myproj"]
         assert isinstance(proj, SampleProject)
         assert proj.repo == "owner/repo"
-        assert proj.homepage == "https://example.com"
 
-    def test_project_use_and_inline_combined(self, tmp_path):
+    def test_scan_recurse_true(self, tmp_path):
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
+            "top.hcl",
+            """
+            project "top" { description = "top" }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "sub",
+            "nested.hcl",
+            """
+            project "nested" { description = "nested" }
+        """,
+        )
+        ws = scan(tmp_path, recurse=True)
+        assert "top" in ws
+        assert "nested" in ws
+
+    def test_scan_recurse_false(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "top.hcl",
+            """
+            project "top" { description = "top" }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "sub",
+            "nested.hcl",
+            """
+            project "nested" { description = "nested" }
+        """,
+        )
+        ws = scan(tmp_path, recurse=False)
+        assert "top" in ws
+        assert "nested" not in ws
+
+    def test_scan_empty_dir(self, tmp_path):
+        ws = scan(tmp_path)
+        assert len(ws) == 0
+
+    def test_scan_missing_dir(self, tmp_path):
+        ws = scan(tmp_path / "nonexistent")
+        assert len(ws) == 0
+
+    def test_scan_with_blueprints_and_projects(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
             "test.hcl",
             """
             blueprint "base" {
                 ensure "widget" { color = "red" }
             }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
             project "myproj" {
                 use = ["base"]
-                ensure "widget" { color = "blue" }
             }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        projs = load_projects(tmp_path, bps)
-        # use blueprints first, then inline
-        assert len(projs["myproj"].blueprints) == 2
-
-    def test_unknown_blueprint_in_use_raises(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                use = ["nonexistent"]
-            }
-        """,
-        )
-        with pytest.raises(ValueError, match="nonexistent"):
-            load_projects(tmp_path, blueprints={})
+        ws = scan(tmp_path)
+        assert len(ws["myproj"].blueprints) == 1
 
 
 # -- Variable interpolation tests --
@@ -354,7 +190,7 @@ class TestVariableInterpolation:
         monkeypatch.setenv("SPECTRIK_TEST_VAR", "/test/path")
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
             blueprint "interp" {
@@ -362,17 +198,18 @@ class TestVariableInterpolation:
                     color = "${env.SPECTRIK_TEST_VAR}/sub"
                 }
             }
+            project "p" { use = ["interp"] }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        op = bps["interp"].ops[0]
+        ws = scan(tmp_path)
+        op = ws["p"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == "/test/path/sub"
 
     def test_cwd_expansion(self, tmp_path):
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
             blueprint "interp" {
@@ -380,10 +217,11 @@ class TestVariableInterpolation:
                     color = "${CWD}/file"
                 }
             }
+            project "p" { use = ["interp"] }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        op = bps["interp"].ops[0]
+        ws = scan(tmp_path)
+        op = ws["p"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == f"{os.getcwd()}/file"
 
@@ -391,7 +229,7 @@ class TestVariableInterpolation:
         monkeypatch.delenv("SPECTRIK_NONEXISTENT", raising=False)
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
             blueprint "interp" {
@@ -399,10 +237,11 @@ class TestVariableInterpolation:
                     color = "${env.SPECTRIK_NONEXISTENT}"
                 }
             }
+            project "p" { use = ["interp"] }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        op = bps["interp"].ops[0]
+        ws = scan(tmp_path)
+        op = ws["p"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == ""
 
@@ -411,7 +250,7 @@ class TestVariableInterpolation:
         monkeypatch.setenv("SPECTRIK_B", "world")
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
             blueprint "interp" {
@@ -419,17 +258,18 @@ class TestVariableInterpolation:
                     color = "${env.SPECTRIK_A}-${env.SPECTRIK_B}"
                 }
             }
+            project "p" { use = ["interp"] }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        op = bps["interp"].ops[0]
+        ws = scan(tmp_path)
+        op = ws["p"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == "hello-world"
 
     def test_no_vars_unchanged(self, tmp_path):
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
             blueprint "interp" {
@@ -437,17 +277,18 @@ class TestVariableInterpolation:
                     color = "plain-value"
                 }
             }
+            project "p" { use = ["interp"] }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        op = bps["interp"].ops[0]
+        ws = scan(tmp_path)
+        op = ws["p"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == "plain-value"
 
     def test_non_string_values_unchanged(self, tmp_path):
         _write_hcl(
             tmp_path,
-            "blueprints",
+            ".",
             "test.hcl",
             """
             blueprint "interp" {
@@ -455,18 +296,19 @@ class TestVariableInterpolation:
                     color = 42
                 }
             }
+            project "p" { use = ["interp"] }
         """,
         )
-        bps = load_blueprints(tmp_path)
-        op = bps["interp"].ops[0]
+        ws = scan(tmp_path)
+        op = ws["p"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == 42
 
-    def test_vars_in_project_attrs(self, tmp_path, monkeypatch):
+    def test_vars_in_project_inline_specs(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SPECTRIK_TEST_VAR", "resolved")
         _write_hcl(
             tmp_path,
-            "projects",
+            ".",
             "test.hcl",
             """
             project "myproj" {
@@ -476,107 +318,7 @@ class TestVariableInterpolation:
             }
         """,
         )
-        projs = load_projects(tmp_path, blueprints={})
-        op = projs["myproj"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == "resolved"
-
-
-# -- Workspace.load() tests --
-
-
-class TestWorkspaceLoad:
-    def test_load_returns_workspace(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                description = "test"
-            }
-        """,
-        )
-        ws = Workspace.load(Project, tmp_path)
-        assert isinstance(ws, Workspace)
-
-    def test_load_contains_projects(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                description = "test"
-            }
-        """,
-        )
-        ws = Workspace.load(Project, tmp_path)
-        assert "myproj" in ws
-        assert ws["myproj"].description == "test"
-
-    def test_load_custom_project_type(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                repo = "owner/repo"
-                homepage = "https://example.com"
-            }
-        """,
-        )
-        ws = Workspace.load(SampleProject, tmp_path)
-        proj = ws["myproj"]
-        assert isinstance(proj, SampleProject)
-        assert proj.repo == "owner/repo"
-
-    def test_load_resolves_blueprints(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "blueprints",
-            "test.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                use = ["base"]
-            }
-        """,
-        )
-        ws = Workspace.load(Project, tmp_path)
-        assert len(ws["myproj"].blueprints) == 1
-
-    def test_load_empty_dir(self, tmp_path):
-        (tmp_path / "blueprints").mkdir()
-        (tmp_path / "projects").mkdir()
-        ws = Workspace.load(Project, tmp_path)
-        assert len(ws) == 0
-
-    def test_load_with_variable_interpolation(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("SPECTRIK_TEST_VAR", "expanded")
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "test.hcl",
-            """
-            project "myproj" {
-                ensure "widget" {
-                    color = "${env.SPECTRIK_TEST_VAR}"
-                }
-            }
-        """,
-        )
-        ws = Workspace.load(Project, tmp_path)
+        ws = scan(tmp_path)
         op = ws["myproj"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == "expanded"
+        assert op.spec.kwargs["color"] == "resolved"

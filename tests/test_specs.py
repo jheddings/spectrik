@@ -7,7 +7,8 @@ import logging
 from pydantic import BaseModel
 
 from spectrik.context import Context
-from spectrik.specs import Absent, Ensure, Present, Specification, spec
+from spectrik.spec import Specification, spec
+from spectrik.specop import Absent, Ensure, Present
 
 
 class FakeProject(BaseModel):
@@ -161,42 +162,42 @@ class TestSpecOpLogging:
     def test_present_logs_skip(self, caplog):
         s = AlwaysEqual()
         op = Present(s)
-        with caplog.at_level(logging.DEBUG, logger="spectrik.specs"):
+        with caplog.at_level(logging.DEBUG, logger="spectrik.specop"):
             op(_make_ctx())
         assert "already exists" in caplog.text
 
     def test_ensure_logs_skip(self, caplog):
         s = AlwaysEqual()
         op = Ensure(s)
-        with caplog.at_level(logging.DEBUG, logger="spectrik.specs"):
+        with caplog.at_level(logging.DEBUG, logger="spectrik.specop"):
             op(_make_ctx())
         assert "up to date" in caplog.text
 
     def test_absent_logs_skip(self, caplog):
         s = NeverEqual()
         op = Absent(s)
-        with caplog.at_level(logging.DEBUG, logger="spectrik.specs"):
+        with caplog.at_level(logging.DEBUG, logger="spectrik.specop"):
             op(_make_ctx())
         assert "not present" in caplog.text
 
     def test_present_logs_dry_run(self, caplog):
         s = NeverEqual()
         op = Present(s)
-        with caplog.at_level(logging.INFO, logger="spectrik.specs"):
+        with caplog.at_level(logging.INFO, logger="spectrik.specop"):
             op(_make_ctx(dry_run=True))
         assert "DRY RUN" in caplog.text
 
     def test_ensure_logs_dry_run(self, caplog):
         s = ExistsButNotEqual()
         op = Ensure(s)
-        with caplog.at_level(logging.INFO, logger="spectrik.specs"):
+        with caplog.at_level(logging.INFO, logger="spectrik.specop"):
             op(_make_ctx(dry_run=True))
         assert "DRY RUN" in caplog.text
 
     def test_absent_logs_dry_run(self, caplog):
         s = ExistsButNotEqual()
         op = Absent(s)
-        with caplog.at_level(logging.INFO, logger="spectrik.specs"):
+        with caplog.at_level(logging.INFO, logger="spectrik.specop"):
             op(_make_ctx(dry_run=True))
         assert "DRY RUN" in caplog.text
 
@@ -206,7 +207,7 @@ class TestSpecOpLogging:
 
 class TestSpecDecorator:
     def test_registers_class(self):
-        from spectrik.specs import _spec_registry
+        from spectrik.spec import _spec_registry
 
         @spec("test_widget")
         class Widget(AlwaysEqual):

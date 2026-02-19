@@ -7,7 +7,10 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .workspace import Workspace
 
 import hcl2
 
@@ -65,16 +68,22 @@ def load(
         return hcl2.load(f)  # type: ignore[reportPrivateImportUsage]
 
 
-def scan(
-    directory: Path,
-) -> list[dict[str, Any]]:
-    """Load and parse all .hcl files in a directory (sorted)."""
-    if not directory.is_dir():
-        return []
-    results = []
-    for hcl_file in sorted(directory.glob("*.hcl")):
-        results.append(load(hcl_file))
-    return results
+def scan[P: Project](
+    path: str | Path,
+    *,
+    project_type: type[P] = Project,  # type: ignore[assignment]
+    recurse: bool = True,
+) -> Workspace[P]:
+    """Scan a directory for .hcl files and return a ready Workspace.
+
+    Convenience function that creates a Workspace, scans the path,
+    and returns it.
+    """
+    from .workspace import Workspace
+
+    ws = Workspace(project_type=project_type)
+    ws.scan(path, recurse=recurse)
+    return ws
 
 
 def _decode_spec(
@@ -107,16 +116,6 @@ def _parse_ops(
     return ops
 
 
-def _collect_pending_blueprints(raw_docs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Extract blueprint name -> data mapping from parsed HCL documents."""
-    pending: dict[str, dict[str, Any]] = {}
-    for doc in raw_docs:
-        for bp_block in doc.get("blueprint", []):
-            for bp_name, bp_data in bp_block.items():
-                pending[bp_name] = bp_data
-    return pending
-
-
 def _resolve_blueprint(
     name: str,
     pending: dict[str, dict[str, Any]],
@@ -147,45 +146,6 @@ def _resolve_blueprint(
     resolved[name] = bp
     resolving.discard(name)
     return bp
-
-
-def load_blueprints(
-    base_path: Path,
-) -> dict[str, Blueprint]:
-    """Scan base_path/blueprints/, resolve includes, return registry."""
-    bp_dir = base_path / "blueprints"
-    raw_docs = scan(bp_dir)
-    pending = _collect_pending_blueprints(raw_docs)
-
-    resolved: dict[str, Blueprint] = {}
-    for name in pending:
-        _resolve_blueprint(name, pending, resolved, set())
-
-    return resolved
-
-
-def load_projects[P: Project](
-    base_path: Path,
-    blueprints: dict[str, Blueprint],
-    *,
-    project_type: type[P] = Project,  # type: ignore[assignment]
-) -> dict[str, P]:
-    """Scan base_path/projects/, resolve 'use' references, return registry."""
-    proj_dir = base_path / "projects"
-    raw_docs = scan(proj_dir)
-
-    projects: dict[str, P] = {}
-    for doc in raw_docs:
-        for proj_block in doc.get("project", []):
-            for proj_name, proj_data in proj_block.items():
-                projects[proj_name] = _build_project(
-                    proj_name,
-                    proj_data,
-                    blueprints,
-                    project_type=project_type,
-                )
-
-    return projects
 
 
 def _build_project[P: Project](
