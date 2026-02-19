@@ -57,9 +57,9 @@ class Workspace[P: Project](Mapping[str, P]):
             return
 
         if recurse:
-            hcl_files = sorted(directory.rglob("*.hcl"))
+            hcl_files = directory.rglob("*.hcl")
         else:
-            hcl_files = sorted(directory.glob("*.hcl"))
+            hcl_files = directory.glob("*.hcl")
 
         for hcl_file in hcl_files:
             self.load(hcl_file)
