@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -532,8 +533,6 @@ class TestVariableInterpolation:
             }
         """,
         )
-        import os
-
         bps = load_blueprints(tmp_path)
         op = bps["interp"].ops[0]
         assert isinstance(op.spec, TrackingSpec)

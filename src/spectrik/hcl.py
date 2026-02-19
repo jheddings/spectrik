@@ -36,10 +36,9 @@ def _expand_var(match: re.Match) -> str:
     env_name = match.group(1)
     builtin_name = match.group(2)
     if env_name is not None:
-        value = os.environ.get(env_name, "")
-        if not value:
+        if env_name not in os.environ:
             logger.warning("Environment variable '%s' is not set", env_name)
-        return value
+        return os.environ.get(env_name, "")
     if builtin_name is not None and builtin_name in _BUILTIN_VARS:
         return _BUILTIN_VARS[builtin_name]()
     logger.warning("Unknown variable '%s'", builtin_name)
