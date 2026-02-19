@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spectrik import Blueprint, Context, Ensure, Project, Specification
-from spectrik.hcl import load_blueprints, load_projects
+from spectrik import Blueprint, Context, Ensure, Project, Specification, Workspace
 from spectrik.specs import _spec_registry
 
 
@@ -77,10 +76,9 @@ class TestEndToEnd:
         """,
         )
 
-        blueprints = load_blueprints(tmp_path)
-        projects = load_projects(tmp_path, blueprints, project_type=AppProject)
+        ws = Workspace.load(AppProject, tmp_path)
 
-        proj = projects["myapp"]
+        proj = ws["myapp"]
         assert proj.repo == "owner/myapp"
 
         proj.build()
@@ -109,10 +107,9 @@ class TestEndToEnd:
         """,
         )
 
-        blueprints = load_blueprints(tmp_path)
-        projects = load_projects(tmp_path, blueprints, project_type=AppProject)
+        ws = Workspace.load(AppProject, tmp_path)
 
-        projects["myapp"].build(dry_run=True)
+        ws["myapp"].build(dry_run=True)
         assert CountingSpec.apply_count == 0
 
     def test_programmatic_api(self):
