@@ -631,3 +631,103 @@ class TestVariableInterpolation:
         op = projs["myproj"].blueprints[0].ops[0]
         assert isinstance(op.spec, TrackingSpec)
         assert op.spec.kwargs["color"] == "resolved"
+
+
+# -- Workspace.load() tests --
+
+
+class TestWorkspaceLoad:
+    def test_load_returns_workspace(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                description = "test"
+            }
+        """,
+        )
+        ws = Workspace.load(Project, tmp_path)
+        assert isinstance(ws, Workspace)
+
+    def test_load_contains_projects(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                description = "test"
+            }
+        """,
+        )
+        ws = Workspace.load(Project, tmp_path)
+        assert "myproj" in ws
+        assert ws["myproj"].description == "test"
+
+    def test_load_custom_project_type(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                repo = "owner/repo"
+                homepage = "https://example.com"
+            }
+        """,
+        )
+        ws = Workspace.load(SampleProject, tmp_path)
+        proj = ws["myproj"]
+        assert isinstance(proj, SampleProject)
+        assert proj.repo == "owner/repo"
+
+    def test_load_resolves_blueprints(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "base" {
+                ensure "widget" { color = "red" }
+            }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                use = ["base"]
+            }
+        """,
+        )
+        ws = Workspace.load(Project, tmp_path)
+        assert len(ws["myproj"].blueprints) == 1
+
+    def test_load_empty_dir(self, tmp_path):
+        (tmp_path / "blueprints").mkdir()
+        (tmp_path / "projects").mkdir()
+        ws = Workspace.load(Project, tmp_path)
+        assert len(ws) == 0
+
+    def test_load_with_variable_interpolation(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPECTRIK_TEST_VAR", "expanded")
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                ensure "widget" {
+                    color = "${env.SPECTRIK_TEST_VAR}"
+                }
+            }
+        """,
+        )
+        ws = Workspace.load(Project, tmp_path)
+        op = ws["myproj"].blueprints[0].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == "expanded"
