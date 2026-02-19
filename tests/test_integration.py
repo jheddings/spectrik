@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spectrik import Blueprint, Context, Ensure, Project, Specification
-from spectrik.hcl import load_blueprints, load_projects
-from spectrik.specs import _spec_registry
+from spectrik import Blueprint, Context, Ensure, Project, Specification, Workspace
+from spectrik.spec import _spec_registry
 
 
 class AppProject(Project):
@@ -32,10 +31,8 @@ class CountingSpec(Specification["AppProject"]):
         CountingSpec.remove_count += 1
 
 
-def _write_hcl(tmp_path: Path, subdir: str, filename: str, content: str) -> Path:
-    d = tmp_path / subdir
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / filename
+def _write_hcl(tmp_path: Path, filename: str, content: str) -> Path:
+    f = tmp_path / filename
     f.write_text(content)
     return f
 
@@ -51,11 +48,10 @@ class TestEndToEnd:
         _spec_registry.update(self._saved)
 
     def test_full_pipeline(self, tmp_path):
-        """Load HCL, build project, verify specs executed."""
+        """Load HCL via Workspace, build project, verify specs executed."""
         _write_hcl(
             tmp_path,
-            "blueprints",
-            "base.hcl",
+            "blueprints.hcl",
             """
             blueprint "base" {
                 ensure "counter" { id = "1" }
@@ -65,8 +61,7 @@ class TestEndToEnd:
         )
         _write_hcl(
             tmp_path,
-            "projects",
-            "app.hcl",
+            "projects.hcl",
             """
             project "myapp" {
                 description = "Test app"
@@ -77,10 +72,10 @@ class TestEndToEnd:
         """,
         )
 
-        blueprints = load_blueprints(tmp_path)
-        projects = load_projects(tmp_path, blueprints, project_type=AppProject)
+        ws = Workspace(project_type=AppProject)
+        ws.scan(tmp_path)
 
-        proj = projects["myapp"]
+        proj = ws["myapp"]
         assert proj.repo == "owner/myapp"
 
         proj.build()
@@ -90,30 +85,48 @@ class TestEndToEnd:
         """Dry run should not apply any specs."""
         _write_hcl(
             tmp_path,
-            "blueprints",
-            "base.hcl",
+            "config.hcl",
             """
             blueprint "base" {
                 ensure "counter" { id = "1" }
             }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "projects",
-            "app.hcl",
-            """
             project "myapp" {
                 use = ["base"]
             }
         """,
         )
 
-        blueprints = load_blueprints(tmp_path)
-        projects = load_projects(tmp_path, blueprints, project_type=AppProject)
+        ws = Workspace(project_type=AppProject)
+        ws.scan(tmp_path)
 
-        projects["myapp"].build(dry_run=True)
+        ws["myapp"].build(dry_run=True)
         assert CountingSpec.apply_count == 0
+
+    def test_hcl_scan_convenience(self, tmp_path):
+        """Test hcl.scan() convenience function."""
+        import spectrik.hcl as hcl
+
+        _write_hcl(
+            tmp_path,
+            "config.hcl",
+            """
+            blueprint "base" {
+                ensure "counter" { id = "1" }
+            }
+            project "myapp" {
+                use = ["base"]
+                repo = "owner/myapp"
+            }
+        """,
+        )
+
+        ws = hcl.scan(tmp_path, project_type=AppProject)
+        proj = ws["myapp"]
+        assert isinstance(proj, AppProject)
+        assert proj.repo == "owner/myapp"
+
+        proj.build()
+        assert CountingSpec.apply_count == 1
 
     def test_programmatic_api(self):
         """Test building specs/blueprints/projects without HCL."""
