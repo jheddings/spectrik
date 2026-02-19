@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from spectrik.context import Context
-from spectrik.hcl import load, load_blueprints, load_projects, scan
+from spectrik.hcl import ProjectLoader, load, load_blueprints, load_projects, scan
 from spectrik.projects import Project
 from spectrik.specs import Specification, _spec_registry
+from spectrik.workspace import Workspace
 
 # -- Test fixtures --
 
@@ -386,3 +387,110 @@ class TestLoadProjects:
         )
         with pytest.raises(ValueError, match="nonexistent"):
             load_projects(tmp_path, blueprints={})
+
+
+# -- ProjectLoader tests --
+
+
+class TestProjectLoader:
+    def test_load_returns_workspace(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                description = "test"
+            }
+        """,
+        )
+        loader = ProjectLoader(Project)
+        ws = loader.load(tmp_path)
+        assert isinstance(ws, Workspace)
+
+    def test_load_contains_projects(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                description = "test"
+            }
+        """,
+        )
+        loader = ProjectLoader(Project)
+        ws = loader.load(tmp_path)
+        assert "myproj" in ws
+        assert ws["myproj"].description == "test"
+
+    def test_load_custom_project_type(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                repo = "owner/repo"
+                homepage = "https://example.com"
+            }
+        """,
+        )
+        loader = ProjectLoader(SampleProject)
+        ws = loader.load(tmp_path)
+        proj = ws["myproj"]
+        assert isinstance(proj, SampleProject)
+        assert proj.repo == "owner/repo"
+
+    def test_load_resolves_blueprints(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "base" {
+                ensure "widget" { color = "red" }
+            }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                use = ["base"]
+            }
+        """,
+        )
+        loader = ProjectLoader(Project)
+        ws = loader.load(tmp_path)
+        assert len(ws["myproj"].blueprints) == 1
+
+    def test_load_with_resolve_attrs(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                ensure "widget" { color = "REPLACE_ME" }
+            }
+        """,
+        )
+
+        def resolver(attrs):
+            return {k: "replaced" if v == "REPLACE_ME" else v for k, v in attrs.items()}
+
+        loader = ProjectLoader(Project, resolve_attrs=resolver)
+        ws = loader.load(tmp_path)
+        op = ws["myproj"].blueprints[0].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs.get("color") == "replaced"
+
+    def test_load_empty_hcl_dir(self, tmp_path):
+        (tmp_path / "blueprints").mkdir()
+        (tmp_path / "projects").mkdir()
+        loader = ProjectLoader(Project)
+        ws = loader.load(tmp_path)
+        assert len(ws) == 0

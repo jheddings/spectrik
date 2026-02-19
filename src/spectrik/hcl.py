@@ -12,6 +12,7 @@ import hcl2
 from spectrik.blueprints import Blueprint
 from spectrik.projects import Project
 from spectrik.specs import Absent, Ensure, Present, SpecOp, _spec_registry
+from spectrik.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -201,3 +202,31 @@ def _build_project[P: Project](
             proj_kwargs[key] = value
 
     return project_type(**proj_kwargs)
+
+
+# ---------------------------------------------------------------------------
+# ProjectLoader — high-level façade
+# ---------------------------------------------------------------------------
+
+
+class ProjectLoader[P: Project]:
+    """Configured loader that turns an HCL directory into a Workspace."""
+
+    def __init__(
+        self,
+        project_type: type[P],
+        resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> None:
+        self.project_type = project_type
+        self.resolve_attrs = resolve_attrs
+
+    def load(self, base_path: Path) -> Workspace[P]:
+        """Load blueprints and projects from base_path, return a Workspace."""
+        blueprints = load_blueprints(base_path, resolve_attrs=self.resolve_attrs)
+        projects = load_projects(
+            base_path,
+            blueprints,
+            project_type=self.project_type,
+            resolve_attrs=self.resolve_attrs,
+        )
+        return Workspace(projects)
