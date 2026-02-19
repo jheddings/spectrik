@@ -1,31 +1,57 @@
-"""Workspace — a typed Mapping of loaded projects."""
+"""Workspace — a mutable, typed collection of HCL-loaded projects."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
-from pathlib import Path
 from typing import Any, overload
 
 from spectrik.projects import Project
 
 
 class Workspace[P: Project](Mapping[str, P]):
-    """Typed, read-only collection of projects returned by Workspace.load()."""
+    """Configured workspace that accumulates HCL data and resolves projects on access.
 
-    def __init__(self, projects: dict[str, P]) -> None:
-        self._projects = dict(projects)
+    Construct with an optional project_type (defaults to Project), then call
+    load() or scan() to add HCL data. Projects are resolved fresh on each
+    Mapping access.
+    """
+
+    def __init__(self, project_type: type[P] = Project) -> None:  # type: ignore[assignment]
+        self._project_type = project_type
+        self._pending_blueprints: dict[str, dict[str, Any]] = {}
+        self._pending_projects: dict[str, dict[str, Any]] = {}
+
+    def _resolve(self) -> dict[str, P]:
+        """Resolve all pending blueprints and build typed project instances."""
+        from spectrik.hcl import _build_project, _resolve_blueprint
+
+        # Resolve blueprints
+        resolved_bps: dict[str, Any] = {}
+        for name in self._pending_blueprints:
+            _resolve_blueprint(name, self._pending_blueprints, resolved_bps, set())
+
+        # Build projects
+        projects: dict[str, P] = {}
+        for proj_name, proj_data in self._pending_projects.items():
+            projects[proj_name] = _build_project(
+                proj_name,
+                proj_data,
+                resolved_bps,
+                project_type=self._project_type,
+            )
+        return projects
 
     def __getitem__(self, name: str) -> P:
-        return self._projects[name]
+        return self._resolve()[name]
 
     def __contains__(self, name: object) -> bool:
-        return name in self._projects
+        return name in self._pending_projects
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self._projects)
+        return iter(self._resolve())
 
     def __len__(self) -> int:
-        return len(self._projects)
+        return len(self._pending_projects)
 
     @overload
     def get(self, name: str) -> P | None: ...
@@ -34,17 +60,15 @@ class Workspace[P: Project](Mapping[str, P]):
     @overload
     def get(self, name: str, default: None) -> P | None: ...
     def get(self, name: str, default: Any = None) -> P | None:
-        return self._projects.get(name, default)
-
-    @classmethod
-    def load[T: Project](cls, project_type: type[T], base_path: Path) -> Workspace[T]:
-        """Load blueprints and projects from base_path, return a Workspace."""
-        from spectrik.hcl import load_blueprints, load_projects
-
-        blueprints = load_blueprints(base_path)
-        projects = load_projects(base_path, blueprints, project_type=project_type)
-        return Workspace(projects)
+        return self._resolve().get(name, default)
 
     def filter(self, names: Iterable[str]) -> list[P]:
         """Return projects matching the given names, preserving input order."""
-        return [p for n in names if (p := self._projects.get(n)) is not None]
+        resolved = self._resolve()
+        return [p for n in names if (p := resolved.get(n)) is not None]
+
+    def __repr__(self) -> str:
+        type_name = self._project_type.__name__
+        bp_count = len(self._pending_blueprints)
+        proj_count = len(self._pending_projects)
+        return f"Workspace(project_type={type_name}, blueprints={bp_count}, projects={proj_count})"
