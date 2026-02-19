@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, overload
 
 from .projects import Project
+
+logger = logging.getLogger(__name__)
 
 
 class Workspace[P: Project](Mapping[str, P]):
@@ -30,6 +33,7 @@ class Workspace[P: Project](Mapping[str, P]):
         from spectrik.hcl import load as hcl_load
 
         path = Path(file)
+        logger.info("Loading '%s'", path)
         doc = hcl_load(path)
 
         # Extract blueprint blocks
@@ -37,6 +41,7 @@ class Workspace[P: Project](Mapping[str, P]):
             for bp_name, bp_data in bp_block.items():
                 if bp_name in self._pending_blueprints:
                     raise ValueError(f"Duplicate blueprint: '{bp_name}'")
+                logger.debug("Found blueprint '%s'", bp_name)
                 self._pending_blueprints[bp_name] = bp_data
 
         # Extract project blocks
@@ -44,6 +49,7 @@ class Workspace[P: Project](Mapping[str, P]):
             for proj_name, proj_data in proj_block.items():
                 if proj_name in self._pending_projects:
                     raise ValueError(f"Duplicate project: '{proj_name}'")
+                logger.debug("Found project '%s'", proj_name)
                 self._pending_projects[proj_name] = proj_data
 
     def scan(self, path: str | Path, *, recurse: bool = True) -> None:
@@ -54,12 +60,15 @@ class Workspace[P: Project](Mapping[str, P]):
         """
         directory = Path(path)
         if not directory.is_dir():
+            logger.warning("Directory '%s' does not exist; skipping scan", directory)
             return
 
+        logger.info("Scanning '%s' (recurse=%s)", directory, recurse)
+
         if recurse:
-            hcl_files = directory.rglob("*.hcl")
+            hcl_files = sorted(directory.rglob("*.hcl"))
         else:
-            hcl_files = directory.glob("*.hcl")
+            hcl_files = sorted(directory.glob("*.hcl"))
 
         for hcl_file in hcl_files:
             self.load(hcl_file)
@@ -67,6 +76,12 @@ class Workspace[P: Project](Mapping[str, P]):
     def _resolve(self) -> dict[str, P]:
         """Resolve all pending blueprints and build typed project instances."""
         from spectrik.hcl import _build_project, _resolve_blueprint
+
+        logger.debug(
+            "Resolving %d blueprint(s) and %d project(s)",
+            len(self._pending_blueprints),
+            len(self._pending_projects),
+        )
 
         # Resolve blueprints
         resolved_bps: dict[str, Any] = {}

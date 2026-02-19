@@ -91,6 +91,7 @@ def _decode_spec(
         raise ValueError(f"Unknown spec type: '{spec_name}'")
     attrs = _interpolate_attrs(attrs)
     spec_cls = _spec_registry[spec_name]
+    logger.debug("Decoding spec '%s' -> %s", spec_name, spec_cls.__name__)
     return spec_cls(**attrs)
 
 
@@ -125,6 +126,7 @@ def _resolve_blueprint(
         raise ValueError(f"Circular include detected: '{name}'")
     if name not in pending:
         raise ValueError(f"Unknown blueprint: '{name}'")
+    logger.debug("Resolving blueprint '%s'", name)
     resolving.add(name)
 
     bp_data = pending[name]
@@ -132,6 +134,7 @@ def _resolve_blueprint(
 
     # Resolve includes first
     for include_name in bp_data.get("include", []):
+        logger.debug("Blueprint '%s' includes '%s'", name, include_name)
         included_bp = _resolve_blueprint(include_name, pending, resolved, resolving)
         ops.extend(included_bp.ops)
 
@@ -152,6 +155,7 @@ def _build_project[P: Project](
     project_type: type[P] = Project,  # type: ignore[assignment]
 ) -> P:
     """Build a single Project instance from parsed HCL data."""
+    logger.debug("Building project '%s' as %s", name, project_type.__name__)
     # Collect blueprints from 'use' references
     proj_blueprints: list[Blueprint] = []
     for bp_name in data.get("use", []):
