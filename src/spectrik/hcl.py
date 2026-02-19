@@ -14,7 +14,6 @@ import hcl2
 from spectrik.blueprints import Blueprint
 from spectrik.projects import Project
 from spectrik.specs import Absent, Ensure, Present, SpecOp, _spec_registry
-from spectrik.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +58,6 @@ def _interpolate_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
 
 def load(
     file: Path,
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Load and parse a single HCL file."""
     with file.open() as f:
@@ -69,38 +66,30 @@ def load(
 
 def scan(
     directory: Path,
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Load and parse all .hcl files in a directory (sorted)."""
     if not directory.is_dir():
         return []
     results = []
     for hcl_file in sorted(directory.glob("*.hcl")):
-        results.append(load(hcl_file, resolve_attrs=resolve_attrs))
+        results.append(load(hcl_file))
     return results
 
 
 def _decode_spec(
     spec_name: str,
     attrs: dict[str, Any],
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Any:
     """Decode a spec block into a Specification instance using the registry."""
     if spec_name not in _spec_registry:
         raise ValueError(f"Unknown spec type: '{spec_name}'")
     attrs = _interpolate_attrs(attrs)
-    if resolve_attrs:
-        attrs = resolve_attrs(attrs)
     spec_cls = _spec_registry[spec_name]
     return spec_cls(**attrs)
 
 
 def _parse_ops(
     block_data: dict[str, Any],
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> list[SpecOp]:
     """Parse strategy blocks (present/ensure/absent) from a blueprint or project block.
 
@@ -112,7 +101,7 @@ def _parse_ops(
         for spec_block in block_data.get(strategy_name, []):
             # Each spec_block is {"spec_name": {attrs}}
             for spec_name, attrs in spec_block.items():
-                spec_instance = _decode_spec(spec_name, dict(attrs), resolve_attrs=resolve_attrs)
+                spec_instance = _decode_spec(spec_name, dict(attrs))
                 ops.append(strategy_cls(spec_instance))
     return ops
 
@@ -132,8 +121,6 @@ def _resolve_blueprint(
     pending: dict[str, dict[str, Any]],
     resolved: dict[str, Blueprint],
     resolving: set[str],
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Blueprint:
     """Recursively resolve a single blueprint, handling includes."""
     if name in resolved:
@@ -149,13 +136,11 @@ def _resolve_blueprint(
 
     # Resolve includes first
     for include_name in bp_data.get("include", []):
-        included_bp = _resolve_blueprint(
-            include_name, pending, resolved, resolving, resolve_attrs=resolve_attrs
-        )
+        included_bp = _resolve_blueprint(include_name, pending, resolved, resolving)
         ops.extend(included_bp.ops)
 
     # Parse own ops
-    ops.extend(_parse_ops(bp_data, resolve_attrs=resolve_attrs))
+    ops.extend(_parse_ops(bp_data))
 
     bp = Blueprint(name=name, ops=ops)
     resolved[name] = bp
@@ -165,8 +150,6 @@ def _resolve_blueprint(
 
 def load_blueprints(
     base_path: Path,
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Blueprint]:
     """Scan base_path/blueprints/, resolve includes, return registry."""
     bp_dir = base_path / "blueprints"
@@ -175,7 +158,7 @@ def load_blueprints(
 
     resolved: dict[str, Blueprint] = {}
     for name in pending:
-        _resolve_blueprint(name, pending, resolved, set(), resolve_attrs=resolve_attrs)
+        _resolve_blueprint(name, pending, resolved, set())
 
     return resolved
 
@@ -185,7 +168,6 @@ def load_projects[P: Project](
     blueprints: dict[str, Blueprint],
     *,
     project_type: type[P] = Project,  # type: ignore[assignment]
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, P]:
     """Scan base_path/projects/, resolve 'use' references, return registry."""
     proj_dir = base_path / "projects"
@@ -200,7 +182,6 @@ def load_projects[P: Project](
                     proj_data,
                     blueprints,
                     project_type=project_type,
-                    resolve_attrs=resolve_attrs,
                 )
 
     return projects
@@ -212,7 +193,6 @@ def _build_project[P: Project](
     blueprints: dict[str, Blueprint],
     *,
     project_type: type[P] = Project,  # type: ignore[assignment]
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> P:
     """Build a single Project instance from parsed HCL data."""
     # Collect blueprints from 'use' references
@@ -223,7 +203,7 @@ def _build_project[P: Project](
         proj_blueprints.append(blueprints[bp_name])
 
     # Parse inline spec ops into an anonymous blueprint
-    inline_ops = _parse_ops(data, resolve_attrs=resolve_attrs)
+    inline_ops = _parse_ops(data)
     if inline_ops:
         proj_blueprints.append(Blueprint(name=f"{name}:inline", ops=inline_ops))
 
@@ -237,31 +217,3 @@ def _build_project[P: Project](
             proj_kwargs[key] = value
 
     return project_type(**proj_kwargs)
-
-
-# ---------------------------------------------------------------------------
-# ProjectLoader — high-level façade
-# ---------------------------------------------------------------------------
-
-
-class ProjectLoader[P: Project]:
-    """Configured loader that turns an HCL directory into a Workspace."""
-
-    def __init__(
-        self,
-        project_type: type[P],
-        resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-    ) -> None:
-        self.project_type = project_type
-        self.resolve_attrs = resolve_attrs
-
-    def load(self, base_path: Path) -> Workspace[P]:
-        """Load blueprints and projects from base_path, return a Workspace."""
-        blueprints = load_blueprints(base_path, resolve_attrs=self.resolve_attrs)
-        projects = load_projects(
-            base_path,
-            blueprints,
-            project_type=self.project_type,
-            resolve_attrs=self.resolve_attrs,
-        )
-        return Workspace(projects)

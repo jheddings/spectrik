@@ -2,7 +2,6 @@
 
 from spectrik.blueprints import Blueprint as Blueprint
 from spectrik.context import Context as Context
-from spectrik.hcl import ProjectLoader as ProjectLoader
 from spectrik.projects import Project as Project
 from spectrik.specs import Absent as Absent
 from spectrik.specs import Ensure as Ensure
