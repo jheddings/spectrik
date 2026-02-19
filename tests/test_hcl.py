@@ -494,3 +494,141 @@ class TestProjectLoader:
         loader = ProjectLoader(Project)
         ws = loader.load(tmp_path)
         assert len(ws) == 0
+
+
+# -- Variable interpolation tests --
+
+
+class TestVariableInterpolation:
+    def test_env_var_expansion(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPECTRIK_TEST_VAR", "/test/path")
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "interp" {
+                ensure "widget" {
+                    color = "${env.SPECTRIK_TEST_VAR}/sub"
+                }
+            }
+        """,
+        )
+        bps = load_blueprints(tmp_path)
+        op = bps["interp"].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == "/test/path/sub"
+
+    def test_cwd_expansion(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "interp" {
+                ensure "widget" {
+                    color = "${CWD}/file"
+                }
+            }
+        """,
+        )
+        import os
+
+        bps = load_blueprints(tmp_path)
+        op = bps["interp"].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == f"{os.getcwd()}/file"
+
+    def test_unknown_env_var_expands_to_empty(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("SPECTRIK_NONEXISTENT", raising=False)
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "interp" {
+                ensure "widget" {
+                    color = "${env.SPECTRIK_NONEXISTENT}"
+                }
+            }
+        """,
+        )
+        bps = load_blueprints(tmp_path)
+        op = bps["interp"].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == ""
+
+    def test_multiple_vars_in_one_string(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPECTRIK_A", "hello")
+        monkeypatch.setenv("SPECTRIK_B", "world")
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "interp" {
+                ensure "widget" {
+                    color = "${env.SPECTRIK_A}-${env.SPECTRIK_B}"
+                }
+            }
+        """,
+        )
+        bps = load_blueprints(tmp_path)
+        op = bps["interp"].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == "hello-world"
+
+    def test_no_vars_unchanged(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "interp" {
+                ensure "widget" {
+                    color = "plain-value"
+                }
+            }
+        """,
+        )
+        bps = load_blueprints(tmp_path)
+        op = bps["interp"].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == "plain-value"
+
+    def test_non_string_values_unchanged(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "blueprints",
+            "test.hcl",
+            """
+            blueprint "interp" {
+                ensure "widget" {
+                    color = 42
+                }
+            }
+        """,
+        )
+        bps = load_blueprints(tmp_path)
+        op = bps["interp"].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == 42
+
+    def test_vars_in_project_attrs(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPECTRIK_TEST_VAR", "resolved")
+        _write_hcl(
+            tmp_path,
+            "projects",
+            "test.hcl",
+            """
+            project "myproj" {
+                ensure "widget" {
+                    color = "${env.SPECTRIK_TEST_VAR}"
+                }
+            }
+        """,
+        )
+        projs = load_projects(tmp_path, blueprints={})
+        op = projs["myproj"].blueprints[0].ops[0]
+        assert isinstance(op.spec, TrackingSpec)
+        assert op.spec.kwargs["color"] == "resolved"
