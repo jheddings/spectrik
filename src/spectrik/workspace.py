@@ -10,7 +10,7 @@ from spectrik.projects import Project
 
 
 class Workspace[P: Project](Mapping[str, P]):
-    """Typed, read-only collection of projects returned by ProjectLoader."""
+    """Typed, read-only collection of projects returned by Workspace.load()."""
 
     def __init__(self, projects: dict[str, P]) -> None:
         self._projects = dict(projects)
