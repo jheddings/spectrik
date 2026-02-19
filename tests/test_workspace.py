@@ -346,3 +346,126 @@ class TestWorkspaceScan:
         ws = Workspace()
         ws.scan(tmp_path)
         assert len(ws) == 1
+
+
+class TestWorkspaceMapping:
+    """Test Mapping protocol with loaded HCL data."""
+
+    def test_values(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+            project "b" { description = "beta" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        names = sorted(p.name for p in ws.values())
+        assert names == ["a", "b"]
+
+    def test_items(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        pairs = list(ws.items())
+        assert len(pairs) == 1
+        assert pairs[0][0] == "a"
+        assert pairs[0][1].description == "alpha"
+
+    def test_keys(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+            project "b" { description = "beta" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        assert sorted(ws.keys()) == ["a", "b"]
+
+    def test_fresh_resolution_each_access(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        proj1 = ws["a"]
+        proj2 = ws["a"]
+        # Fresh resolution means different object instances
+        assert proj1 is not proj2
+        assert proj1.name == proj2.name
+
+    def test_filter_with_loaded_data(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+            project "b" { description = "beta" }
+            project "c" { description = "gamma" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        result = ws.filter(["a", "c"])
+        assert len(result) == 2
+        assert result[0].name == "a"
+        assert result[1].name == "c"
+
+    def test_filter_skips_missing(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        result = ws.filter(["a", "missing"])
+        assert len(result) == 1
+
+    def test_filter_empty_names(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "a" { description = "alpha" }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        assert ws.filter([]) == []
+
+    def test_custom_project_type(self, tmp_path):
+        class Custom(Project):
+            repo: str = ""
+
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "myproj" {
+                repo = "owner/repo"
+            }
+        """,
+        )
+        ws = Workspace(project_type=Custom)
+        ws.load(tmp_path / "test.hcl")
+        proj = ws["myproj"]
+        assert isinstance(proj, Custom)
+        assert proj.repo == "owner/repo"
