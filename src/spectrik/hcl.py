@@ -34,6 +34,28 @@ _BUILTIN_VARS: dict[str, Callable[[], str]] = {
 }
 
 
+def scan[P: Project](
+    path: str | Path,
+    *,
+    project_type: type[P] = Project,  # type: ignore[assignment]
+    recurse: bool = True,
+) -> Workspace[P]:
+    """Scan a directory for .hcl files and return a ready Workspace."""
+    from .workspace import Workspace
+
+    ws = Workspace(project_type=project_type)
+    ws.scan(path, recurse=recurse)
+    return ws
+
+
+def load(
+    file: Path,
+) -> dict[str, Any]:
+    """Load and parse a single HCL file."""
+    with file.open() as f:
+        return hcl2.load(f)  # type: ignore[reportPrivateImportUsage]
+
+
 def _expand_var(match: re.Match) -> str:
     """Expand a single ${...} variable reference."""
     env_name = match.group(1)
@@ -58,32 +80,6 @@ def _interpolate_value(value: Any) -> Any:
 def _interpolate_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
     """Expand variable references in all attribute values."""
     return {k: _interpolate_value(v) for k, v in attrs.items()}
-
-
-def load(
-    file: Path,
-) -> dict[str, Any]:
-    """Load and parse a single HCL file."""
-    with file.open() as f:
-        return hcl2.load(f)  # type: ignore[reportPrivateImportUsage]
-
-
-def scan[P: Project](
-    path: str | Path,
-    *,
-    project_type: type[P] = Project,  # type: ignore[assignment]
-    recurse: bool = True,
-) -> Workspace[P]:
-    """Scan a directory for .hcl files and return a ready Workspace.
-
-    Convenience function that creates a Workspace, scans the path,
-    and returns it.
-    """
-    from .workspace import Workspace
-
-    ws = Workspace(project_type=project_type)
-    ws.scan(path, recurse=recurse)
-    return ws
 
 
 def _decode_spec(
