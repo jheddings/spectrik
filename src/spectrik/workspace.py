@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
+from pathlib import Path
 from typing import Any, overload
 
 from spectrik.projects import Project
@@ -20,6 +21,30 @@ class Workspace[P: Project](Mapping[str, P]):
         self._project_type = project_type
         self._pending_blueprints: dict[str, dict[str, Any]] = {}
         self._pending_projects: dict[str, dict[str, Any]] = {}
+
+    def load(self, file: str | Path) -> None:
+        """Parse a single HCL file and extract blueprint/project blocks.
+
+        Raises ValueError if any blueprint or project name is already loaded.
+        """
+        from spectrik.hcl import load as hcl_load
+
+        path = Path(file)
+        doc = hcl_load(path)
+
+        # Extract blueprint blocks
+        for bp_block in doc.get("blueprint", []):
+            for bp_name, bp_data in bp_block.items():
+                if bp_name in self._pending_blueprints:
+                    raise ValueError(f"Duplicate blueprint: '{bp_name}'")
+                self._pending_blueprints[bp_name] = bp_data
+
+        # Extract project blocks
+        for proj_block in doc.get("project", []):
+            for proj_name, proj_data in proj_block.items():
+                if proj_name in self._pending_projects:
+                    raise ValueError(f"Duplicate project: '{proj_name}'")
+                self._pending_projects[proj_name] = proj_data
 
     def _resolve(self) -> dict[str, P]:
         """Resolve all pending blueprints and build typed project instances."""
