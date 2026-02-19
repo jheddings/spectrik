@@ -6,8 +6,8 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from spectrik.blueprints import Blueprint
-from spectrik.context import Context
+from .blueprints import Blueprint
+from .context import Context
 
 logger = logging.getLogger(__name__)
 

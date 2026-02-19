@@ -6,7 +6,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, overload
 
-from spectrik.projects import Project
+from .projects import Project
 
 
 class Workspace[P: Project](Mapping[str, P]):
@@ -45,6 +45,24 @@ class Workspace[P: Project](Mapping[str, P]):
                 if proj_name in self._pending_projects:
                     raise ValueError(f"Duplicate project: '{proj_name}'")
                 self._pending_projects[proj_name] = proj_data
+
+    def scan(self, path: str | Path, *, recurse: bool = True) -> None:
+        """Discover .hcl files in a directory and load each one.
+
+        With recurse=True (default), walks subdirectories. Files are
+        processed in sorted order for deterministic behavior.
+        """
+        directory = Path(path)
+        if not directory.is_dir():
+            return
+
+        if recurse:
+            hcl_files = sorted(directory.rglob("*.hcl"))
+        else:
+            hcl_files = sorted(directory.glob("*.hcl"))
+
+        for hcl_file in hcl_files:
+            self.load(hcl_file)
 
     def _resolve(self) -> dict[str, P]:
         """Resolve all pending blueprints and build typed project instances."""

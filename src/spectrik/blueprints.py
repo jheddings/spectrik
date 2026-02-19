@@ -8,8 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from spectrik.context import Context
-from spectrik.specs import SpecOp
+from .context import Context
+from .specop import SpecOp
 
 logger = logging.getLogger(__name__)
 

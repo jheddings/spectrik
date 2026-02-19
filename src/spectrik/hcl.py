@@ -11,9 +11,10 @@ from typing import Any
 
 import hcl2
 
-from spectrik.blueprints import Blueprint
-from spectrik.projects import Project
-from spectrik.specs import Absent, Ensure, Present, SpecOp, _spec_registry
+from .blueprints import Blueprint
+from .projects import Project
+from .spec import _spec_registry
+from .specop import Absent, Ensure, Present, SpecOp
 
 logger = logging.getLogger(__name__)
 

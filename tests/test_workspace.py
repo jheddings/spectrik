@@ -8,7 +8,7 @@ import pytest
 
 from spectrik.context import Context
 from spectrik.projects import Project
-from spectrik.specs import Specification, _spec_registry
+from spectrik.spec import Specification, _spec_registry
 from spectrik.workspace import Workspace
 
 
@@ -233,3 +233,116 @@ class TestWorkspaceLoad:
         ws.load(tmp_path / "test.hcl")
         assert "blueprints=1" in repr(ws)
         assert "projects=1" in repr(ws)
+
+
+class TestWorkspaceScan:
+    def test_scan_finds_hcl_files(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "a.hcl",
+            """
+            project "alpha" { description = "a" }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "b.hcl",
+            """
+            project "beta" { description = "b" }
+        """,
+        )
+        ws = Workspace()
+        ws.scan(tmp_path)
+        assert "alpha" in ws
+        assert "beta" in ws
+
+    def test_scan_accepts_string_path(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "myproj" { description = "test" }
+        """,
+        )
+        ws = Workspace()
+        ws.scan(str(tmp_path))
+        assert "myproj" in ws
+
+    def test_scan_recurse_true(self, tmp_path):
+        sub = tmp_path / "subdir"
+        sub.mkdir()
+        _write_hcl(
+            tmp_path,
+            "top.hcl",
+            """
+            project "top" { description = "top" }
+        """,
+        )
+        (sub / "nested.hcl").write_text("""
+            project "nested" { description = "nested" }
+        """)
+        ws = Workspace()
+        ws.scan(tmp_path, recurse=True)
+        assert "top" in ws
+        assert "nested" in ws
+
+    def test_scan_recurse_false(self, tmp_path):
+        sub = tmp_path / "subdir"
+        sub.mkdir()
+        _write_hcl(
+            tmp_path,
+            "top.hcl",
+            """
+            project "top" { description = "top" }
+        """,
+        )
+        (sub / "nested.hcl").write_text("""
+            project "nested" { description = "nested" }
+        """)
+        ws = Workspace()
+        ws.scan(tmp_path, recurse=False)
+        assert "top" in ws
+        assert "nested" not in ws
+
+    def test_scan_sorted_order(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "z.hcl",
+            """
+            project "zulu" { description = "z" }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            "a.hcl",
+            """
+            project "alpha" { description = "a" }
+        """,
+        )
+        ws = Workspace()
+        ws.scan(tmp_path)
+        # Both loaded successfully (sorted processing means deterministic)
+        assert len(ws) == 2
+
+    def test_scan_empty_dir(self, tmp_path):
+        ws = Workspace()
+        ws.scan(tmp_path)
+        assert len(ws) == 0
+
+    def test_scan_missing_dir(self, tmp_path):
+        ws = Workspace()
+        ws.scan(tmp_path / "nonexistent")
+        assert len(ws) == 0
+
+    def test_scan_ignores_non_hcl_files(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "myproj" { description = "test" }
+        """,
+        )
+        (tmp_path / "readme.txt").write_text("not hcl")
+        ws = Workspace()
+        ws.scan(tmp_path)
+        assert len(ws) == 1
