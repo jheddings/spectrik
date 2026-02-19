@@ -5,7 +5,8 @@ from __future__ import annotations
 from spectrik.blueprints import Blueprint
 from spectrik.context import Context
 from spectrik.projects import Project
-from spectrik.specs import Ensure, Specification
+from spectrik.spec import Specification
+from spectrik.specop import Ensure
 
 
 class TrackingSpec(Specification["Project"]):

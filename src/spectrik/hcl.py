@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .workspace import Workspace
 
 import hcl2
 
-from spectrik.blueprints import Blueprint
-from spectrik.projects import Project
-from spectrik.specs import Absent, Ensure, Present, SpecOp, _spec_registry
+from .blueprints import Blueprint
+from .projects import Project
+from .spec import _spec_registry
+from .specop import Absent, Ensure, Present, SpecOp
 
 logger = logging.getLogger(__name__)
 
@@ -21,50 +27,76 @@ _STRATEGY_MAP: dict[str, type[SpecOp]] = {
     "absent": Absent,
 }
 
+_VAR_PATTERN = re.compile(r"\$\{(?:env\.(\w+)|(\w+))\}")
+
+_BUILTIN_VARS: dict[str, Callable[[], str]] = {
+    "CWD": os.getcwd,
+}
+
+
+def scan[P: Project](
+    path: str | Path,
+    *,
+    project_type: type[P] = Project,  # type: ignore[assignment]
+    recurse: bool = True,
+) -> Workspace[P]:
+    """Scan a directory for .hcl files and return a ready Workspace."""
+    from .workspace import Workspace
+
+    ws = Workspace(project_type=project_type)
+    ws.scan(path, recurse=recurse)
+    return ws
+
 
 def load(
     file: Path,
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Load and parse a single HCL file."""
     with file.open() as f:
         return hcl2.load(f)  # type: ignore[reportPrivateImportUsage]
 
 
-def scan(
-    directory: Path,
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """Load and parse all .hcl files in a directory (sorted)."""
-    if not directory.is_dir():
-        return []
-    results = []
-    for hcl_file in sorted(directory.glob("*.hcl")):
-        results.append(load(hcl_file, resolve_attrs=resolve_attrs))
-    return results
+def _expand_var(match: re.Match) -> str:
+    """Expand a single ${...} variable reference."""
+    env_name = match.group(1)
+    builtin_name = match.group(2)
+    if env_name is not None:
+        if env_name not in os.environ:
+            logger.warning("Environment variable '%s' is not set", env_name)
+        return os.environ.get(env_name, "")
+    if builtin_name is not None and builtin_name in _BUILTIN_VARS:
+        return _BUILTIN_VARS[builtin_name]()
+    logger.warning("Unknown variable '%s'", builtin_name)
+    return match.group(0)
+
+
+def _interpolate_value(value: Any) -> Any:
+    """Expand ${env.VAR} and ${CWD} references in a string value."""
+    if isinstance(value, str) and "${" in value:
+        return _VAR_PATTERN.sub(_expand_var, value)
+    return value
+
+
+def _interpolate_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Expand variable references in all attribute values."""
+    return {k: _interpolate_value(v) for k, v in attrs.items()}
 
 
 def _decode_spec(
     spec_name: str,
     attrs: dict[str, Any],
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Any:
     """Decode a spec block into a Specification instance using the registry."""
     if spec_name not in _spec_registry:
         raise ValueError(f"Unknown spec type: '{spec_name}'")
-    if resolve_attrs:
-        attrs = resolve_attrs(attrs)
+    attrs = _interpolate_attrs(attrs)
     spec_cls = _spec_registry[spec_name]
+    logger.debug("Decoding spec '%s' -> %s", spec_name, spec_cls.__name__)
     return spec_cls(**attrs)
 
 
 def _parse_ops(
     block_data: dict[str, Any],
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> list[SpecOp]:
     """Parse strategy blocks (present/ensure/absent) from a blueprint or project block.
 
@@ -76,19 +108,9 @@ def _parse_ops(
         for spec_block in block_data.get(strategy_name, []):
             # Each spec_block is {"spec_name": {attrs}}
             for spec_name, attrs in spec_block.items():
-                spec_instance = _decode_spec(spec_name, dict(attrs), resolve_attrs=resolve_attrs)
+                spec_instance = _decode_spec(spec_name, dict(attrs))
                 ops.append(strategy_cls(spec_instance))
     return ops
-
-
-def _collect_pending_blueprints(raw_docs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Extract blueprint name -> data mapping from parsed HCL documents."""
-    pending: dict[str, dict[str, Any]] = {}
-    for doc in raw_docs:
-        for bp_block in doc.get("blueprint", []):
-            for bp_name, bp_data in bp_block.items():
-                pending[bp_name] = bp_data
-    return pending
 
 
 def _resolve_blueprint(
@@ -96,8 +118,6 @@ def _resolve_blueprint(
     pending: dict[str, dict[str, Any]],
     resolved: dict[str, Blueprint],
     resolving: set[str],
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Blueprint:
     """Recursively resolve a single blueprint, handling includes."""
     if name in resolved:
@@ -106,6 +126,7 @@ def _resolve_blueprint(
         raise ValueError(f"Circular include detected: '{name}'")
     if name not in pending:
         raise ValueError(f"Unknown blueprint: '{name}'")
+    logger.debug("Resolving blueprint '%s'", name)
     resolving.add(name)
 
     bp_data = pending[name]
@@ -113,61 +134,17 @@ def _resolve_blueprint(
 
     # Resolve includes first
     for include_name in bp_data.get("include", []):
-        included_bp = _resolve_blueprint(
-            include_name, pending, resolved, resolving, resolve_attrs=resolve_attrs
-        )
+        logger.debug("Blueprint '%s' includes '%s'", name, include_name)
+        included_bp = _resolve_blueprint(include_name, pending, resolved, resolving)
         ops.extend(included_bp.ops)
 
     # Parse own ops
-    ops.extend(_parse_ops(bp_data, resolve_attrs=resolve_attrs))
+    ops.extend(_parse_ops(bp_data))
 
     bp = Blueprint(name=name, ops=ops)
     resolved[name] = bp
     resolving.discard(name)
     return bp
-
-
-def load_blueprints(
-    base_path: Path,
-    *,
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-) -> dict[str, Blueprint]:
-    """Scan base_path/blueprints/, resolve includes, return registry."""
-    bp_dir = base_path / "blueprints"
-    raw_docs = scan(bp_dir)
-    pending = _collect_pending_blueprints(raw_docs)
-
-    resolved: dict[str, Blueprint] = {}
-    for name in pending:
-        _resolve_blueprint(name, pending, resolved, set(), resolve_attrs=resolve_attrs)
-
-    return resolved
-
-
-def load_projects[P: Project](
-    base_path: Path,
-    blueprints: dict[str, Blueprint],
-    *,
-    project_type: type[P] = Project,  # type: ignore[assignment]
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-) -> dict[str, P]:
-    """Scan base_path/projects/, resolve 'use' references, return registry."""
-    proj_dir = base_path / "projects"
-    raw_docs = scan(proj_dir)
-
-    projects: dict[str, P] = {}
-    for doc in raw_docs:
-        for proj_block in doc.get("project", []):
-            for proj_name, proj_data in proj_block.items():
-                projects[proj_name] = _build_project(
-                    proj_name,
-                    proj_data,
-                    blueprints,
-                    project_type=project_type,
-                    resolve_attrs=resolve_attrs,
-                )
-
-    return projects
 
 
 def _build_project[P: Project](
@@ -176,9 +153,9 @@ def _build_project[P: Project](
     blueprints: dict[str, Blueprint],
     *,
     project_type: type[P] = Project,  # type: ignore[assignment]
-    resolve_attrs: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> P:
     """Build a single Project instance from parsed HCL data."""
+    logger.debug("Building project '%s' as %s", name, project_type.__name__)
     # Collect blueprints from 'use' references
     proj_blueprints: list[Blueprint] = []
     for bp_name in data.get("use", []):
@@ -187,7 +164,7 @@ def _build_project[P: Project](
         proj_blueprints.append(blueprints[bp_name])
 
     # Parse inline spec ops into an anonymous blueprint
-    inline_ops = _parse_ops(data, resolve_attrs=resolve_attrs)
+    inline_ops = _parse_ops(data)
     if inline_ops:
         proj_blueprints.append(Blueprint(name=f"{name}:inline", ops=inline_ops))
 

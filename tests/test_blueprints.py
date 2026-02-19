@@ -6,7 +6,8 @@ from pydantic import BaseModel
 
 from spectrik.blueprints import Blueprint
 from spectrik.context import Context
-from spectrik.specs import Ensure, Present, Specification
+from spectrik.spec import Specification
+from spectrik.specop import Ensure, Present
 
 
 class FakeProject(BaseModel):
