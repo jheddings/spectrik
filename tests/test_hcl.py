@@ -121,6 +121,34 @@ class TestLoad:
         result = load(tmp_path / "test.hcl", context={})
         assert result["project"][0]["p"]["description"] == "plain"
 
+    def test_load_undefined_var_raises_with_filepath(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "bad.hcl",
+            """
+        project "p" {
+            description = "{{ missing_var }}"
+        }
+    """,
+        )
+        with pytest.raises(ValueError, match="bad.hcl"):
+            load(tmp_path / "bad.hcl", context={})
+
+    def test_load_jinja2_syntax_error_raises_with_filepath(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "bad.hcl",
+            """
+        project "p" {
+            description = "{% if %}"
+        }
+    """,
+        )
+        with pytest.raises(ValueError, match="bad.hcl"):
+            load(tmp_path / "bad.hcl", context={})
+
 
 # -- hcl.scan() convenience function tests --
 
