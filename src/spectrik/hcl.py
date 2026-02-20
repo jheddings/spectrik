@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import re
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,12 +23,6 @@ _STRATEGY_MAP: dict[str, type[SpecOp]] = {
     "present": Present,
     "ensure": Ensure,
     "absent": Absent,
-}
-
-_VAR_PATTERN = re.compile(r"\$\{(?:env\.(\w+)|(\w+))\}")
-
-_BUILTIN_VARS: dict[str, Callable[[], str]] = {
-    "CWD": os.getcwd,
 }
 
 
@@ -71,32 +62,6 @@ def load(
     return hcl2.loads(text)
 
 
-def _expand_var(match: re.Match) -> str:
-    """Expand a single ${...} variable reference."""
-    env_name = match.group(1)
-    builtin_name = match.group(2)
-    if env_name is not None:
-        if env_name not in os.environ:
-            logger.warning("Environment variable '%s' is not set", env_name)
-        return os.environ.get(env_name, "")
-    if builtin_name is not None and builtin_name in _BUILTIN_VARS:
-        return _BUILTIN_VARS[builtin_name]()
-    logger.warning("Unknown variable '%s'", builtin_name)
-    return match.group(0)
-
-
-def _interpolate_value(value: Any) -> Any:
-    """Expand ${env.VAR} and ${CWD} references in a string value."""
-    if isinstance(value, str) and "${" in value:
-        return _VAR_PATTERN.sub(_expand_var, value)
-    return value
-
-
-def _interpolate_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
-    """Expand variable references in all attribute values."""
-    return {k: _interpolate_value(v) for k, v in attrs.items()}
-
-
 def _decode_spec(
     spec_name: str,
     attrs: dict[str, Any],
@@ -104,7 +69,6 @@ def _decode_spec(
     """Decode a spec block into a Specification instance using the registry."""
     if spec_name not in _spec_registry:
         raise ValueError(f"Unknown spec type: '{spec_name}'")
-    attrs = _interpolate_attrs(attrs)
     spec_cls = _spec_registry[spec_name]
     logger.debug("Decoding spec '%s' -> %s", spec_name, spec_cls.__name__)
     return spec_cls(**attrs)
