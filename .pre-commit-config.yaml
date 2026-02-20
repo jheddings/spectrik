@@ -20,6 +20,7 @@ repos:
     hooks:
       - id: pyright
         additional_dependencies:
+          - jinja2>=3.1
           - pydantic>=2.12
           - python-hcl2>=7.3
           - pytest>=9.0.2

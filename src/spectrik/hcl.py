@@ -59,7 +59,7 @@ def load(
         text = template.render(ctx)
     except jinja2.TemplateError as exc:
         raise ValueError(f"{file}: {exc}") from exc
-    return hcl2.loads(text)
+    return hcl2.loads(text)  # type: ignore[reportPrivateImportUsage]
 
 
 def _decode_spec(
