@@ -266,6 +266,115 @@ class TestScan:
         assert len(ws["myproj"].blueprints) == 1
 
 
+# -- Jinja2 structural feature tests --
+
+
+class TestJinja2Features:
+    """Test Jinja2 structural templating in HCL files."""
+
+    def test_conditional_includes_block(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "base" {
+                description = "always"
+            }
+            {% if include_extra %}
+            project "extra" {
+                description = "conditional"
+            }
+            {% endif %}
+        """,
+        )
+        ws = scan(tmp_path, context={"include_extra": True})
+        assert "base" in ws
+        assert "extra" in ws
+
+    def test_conditional_excludes_block(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "base" {
+                description = "always"
+            }
+            {% if include_extra %}
+            project "extra" {
+                description = "conditional"
+            }
+            {% endif %}
+        """,
+        )
+        ws = scan(tmp_path, context={"include_extra": False})
+        assert "base" in ws
+        assert "extra" not in ws
+
+    def test_loop_generates_blocks(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            {% for name in projects %}
+            project "{{ name }}" {
+                description = "generated"
+            }
+            {% endfor %}
+        """,
+        )
+        ws = scan(tmp_path, context={"projects": ["alpha", "beta", "gamma"]})
+        assert len(ws) == 3
+        assert "alpha" in ws
+        assert "beta" in ws
+        assert "gamma" in ws
+
+    def test_comment_stripped(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            {# This Jinja2 comment should not appear in output #}
+            project "p" {
+                description = "test"
+            }
+        """,
+        )
+        ws = scan(tmp_path, context={})
+        assert ws["p"].description == "test"
+
+    def test_nested_context_access(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ config.region }}"
+            }
+        """,
+        )
+        ws = scan(tmp_path, context={"config": {"region": "us-east-1"}})
+        assert ws["p"].description == "us-east-1"
+
+    def test_jinja2_filter(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ name | upper }}"
+            }
+        """,
+        )
+        ws = scan(tmp_path, context={"name": "hello"})
+        assert ws["p"].description == "HELLO"
+
+
 # -- Variable interpolation tests --
 
 
