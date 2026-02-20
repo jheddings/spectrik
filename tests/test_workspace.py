@@ -469,3 +469,56 @@ class TestWorkspaceMapping:
         proj = ws["myproj"]
         assert isinstance(proj, Custom)
         assert proj.repo == "owner/repo"
+
+
+class TestWorkspaceContext:
+    def test_workspace_stores_context(self):
+        ctx = {"greeting": "hello"}
+        ws = Workspace(context=ctx)
+        assert ws._context is ctx
+
+    def test_workspace_default_context_is_none(self):
+        ws = Workspace()
+        assert ws._context is None
+
+    def test_load_renders_jinja2_with_context(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ greeting }}"
+            }
+        """,
+        )
+        ws = Workspace(context={"greeting": "hello"})
+        ws.load(tmp_path / "test.hcl")
+        assert ws["p"].description == "hello"
+
+    def test_load_without_context_no_rendering(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "p" {
+                description = "plain"
+            }
+        """,
+        )
+        ws = Workspace()
+        ws.load(tmp_path / "test.hcl")
+        assert ws["p"].description == "plain"
+
+    def test_scan_renders_jinja2_with_context(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ greeting }}"
+            }
+        """,
+        )
+        ws = Workspace(context={"greeting": "hello"})
+        ws.scan(tmp_path)
+        assert ws["p"].description == "hello"
