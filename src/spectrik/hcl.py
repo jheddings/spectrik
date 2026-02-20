@@ -40,11 +40,12 @@ def scan[P: Project](
     *,
     project_type: type[P] = Project,  # type: ignore[assignment]
     recurse: bool = True,
+    context: dict[str, Any] | None = None,
 ) -> Workspace[P]:
     """Scan a directory for .hcl files and return a ready Workspace."""
     from .workspace import Workspace
 
-    ws = Workspace(project_type=project_type)
+    ws = Workspace(project_type=project_type, context=context)
     ws.scan(path, recurse=recurse)
     return ws
 

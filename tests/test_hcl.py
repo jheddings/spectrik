@@ -234,6 +234,20 @@ class TestScan:
         ws = scan(tmp_path / "nonexistent")
         assert len(ws) == 0
 
+    def test_scan_with_context(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ greeting }}"
+            }
+        """,
+        )
+        ws = scan(tmp_path, context={"greeting": "hello"})
+        assert ws["p"].description == "hello"
+
     def test_scan_with_blueprints_and_projects(self, tmp_path):
         _write_hcl(
             tmp_path,
