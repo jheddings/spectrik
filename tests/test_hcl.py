@@ -79,6 +79,48 @@ class TestLoad:
         result = load(tmp_path / "test.hcl")
         assert "blueprint" in result
 
+    def test_load_with_context_renders_variables(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ greeting }}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl", context={"greeting": "hello"})
+        assert result["project"][0]["p"]["description"] == "hello"
+
+    def test_load_without_context_passes_through(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "plain"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["p"]["description"] == "plain"
+
+    def test_load_empty_context_passes_through(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "plain"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl", context={})
+        assert result["project"][0]["p"]["description"] == "plain"
+
 
 # -- hcl.scan() convenience function tests --
 

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .workspace import Workspace
 
 import hcl2
+import jinja2
 
 from .blueprints import Blueprint
 from .projects import Project
@@ -50,10 +51,23 @@ def scan[P: Project](
 
 def load(
     file: Path,
+    *,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Load and parse a single HCL file."""
-    with file.open() as f:
-        return hcl2.load(f)  # type: ignore[reportPrivateImportUsage]
+    """Load and parse a single HCL file, rendering Jinja2 templates with context."""
+    text = file.read_text()
+    ctx = context if context is not None else {}
+    env = jinja2.Environment(
+        undefined=jinja2.StrictUndefined,
+        keep_trailing_newline=True,
+        autoescape=False,
+    )
+    try:
+        template = env.from_string(text)
+        text = template.render(ctx)
+    except jinja2.TemplateError as exc:
+        raise ValueError(f"{file}: {exc}") from exc
+    return hcl2.loads(text)
 
 
 def _expand_var(match: re.Match) -> str:
