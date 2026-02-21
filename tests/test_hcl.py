@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 from spectrik.context import Context
-from spectrik.hcl import load, scan
+from spectrik.hcl import load, parse, scan
 from spectrik.projects import Project
 from spectrik.spec import Specification, _spec_registry
-from spectrik.workspace import Workspace
+from spectrik.workspace import BlueprintRef, ProjectRef, Workspace
 
 # -- Test fixtures --
 
@@ -249,6 +249,158 @@ class TestScan:
         )
         ws = scan(tmp_path)
         assert len(ws["myproj"].blueprints) == 1
+
+
+# -- parse() tests --
+
+
+class TestParse:
+    def test_parse_project(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "myproj" {
+                description = "A test project"
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert isinstance(ref, ProjectRef)
+        assert ref.name == "myproj"
+        assert ref.description == "A test project"
+
+    def test_parse_blueprint(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            blueprint "base" {
+                ensure "widget" {
+                    color = "red"
+                }
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert isinstance(ref, BlueprintRef)
+        assert ref.name == "base"
+        assert len(ref.ops) == 1
+        assert ref.ops[0].strategy == "ensure"
+        assert ref.ops[0].name == "widget"
+
+    def test_parse_blueprint_and_project(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            blueprint "base" {
+                ensure "widget" { color = "red" }
+            }
+            project "myproj" {
+                use = ["base"]
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 2
+        bp_refs = [r for r in refs if isinstance(r, BlueprintRef)]
+        proj_refs = [r for r in refs if isinstance(r, ProjectRef)]
+        assert len(bp_refs) == 1
+        assert len(proj_refs) == 1
+        assert proj_refs[0].use == ["base"]
+
+    def test_parse_with_context(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "${greeting}"
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl", context={"greeting": "hello"})
+        assert len(refs) == 1
+        assert isinstance(refs[0], ProjectRef)
+        assert refs[0].description == "hello"
+
+    def test_parse_unsupported_block_raises(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "x" {
+                default = "y"
+            }
+        """,
+        )
+        with pytest.raises(ValueError, match="Unsupported block type"):
+            parse(tmp_path / "test.hcl")
+
+    def test_parse_project_with_extra_attrs(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "myproj" {
+                repo = "owner/repo"
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert isinstance(ref, ProjectRef)
+        assert ref.attrs == {"repo": "owner/repo"}
+
+    def test_parse_blueprint_with_includes(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            blueprint "extended" {
+                include = ["base"]
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert isinstance(ref, BlueprintRef)
+        assert ref.includes == ["base"]
+
+    def test_parse_multiple_strategies(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            blueprint "multi" {
+                present "widget" { color = "red" }
+                ensure "widget" { color = "blue" }
+                absent "widget" {}
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert isinstance(ref, BlueprintRef)
+        assert len(ref.ops) == 3
+        strategies = {op.strategy for op in ref.ops}
+        assert strategies == {"present", "ensure", "absent"}
 
 
 # -- Interpolation feature tests --
