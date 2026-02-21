@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from typing import Any, overload
 
 from .blueprints import Blueprint
@@ -18,6 +20,34 @@ _STRATEGY_MAP: dict[str, type[SpecOp]] = {
     "ensure": Ensure,
     "absent": Absent,
 }
+
+
+@dataclass
+class WorkspaceRef(ABC):
+    """Base class for all workspace references."""
+
+    name: str
+
+    @abstractmethod
+    def resolve(self, workspace: Workspace) -> Any:
+        """Return a ready-to-use instance using the workspace as context."""
+
+
+@dataclass
+class OperationRef(WorkspaceRef):
+    """A configuration operation — a spec type + strategy + attributes."""
+
+    strategy: str
+    attrs: dict[str, Any]
+    label: str | None = None
+
+    def resolve(self, workspace: Workspace) -> SpecOp:
+        if self.name not in _spec_registry:
+            raise ValueError(f"Unknown spec type: '{self.name}'")
+        spec_cls = _spec_registry[self.name]
+        spec_instance = spec_cls(**self.attrs)
+        strategy_cls = _STRATEGY_MAP[self.strategy]
+        return strategy_cls(spec_instance)
 
 
 def _decode_spec(
@@ -118,12 +148,7 @@ def _build_project[P: Project](
 
 
 class Workspace[P: Project](Mapping[str, P]):
-    """Configured workspace that accumulates parsed data and resolves projects on access.
-
-    Construct with an optional project_type (defaults to Project), then call
-    load() to add parsed data dicts. Projects are resolved fresh on each
-    Mapping access.
-    """
+    """Configured workspace that accumulates parsed data and resolves projects on access."""
 
     def __init__(
         self,
