@@ -101,10 +101,10 @@ callable, it is invoked at resolution time — useful for values like
 Use `$$` to produce a literal `$` in the output. This is needed when HCL
 values contain template syntax meant for other tools:
 
-| You write in HCL | Output after interpolation |
-|---|---|
-| `${name}` | Resolved from context |
-| `$${name}` | Literal `${name}` |
+| You write in HCL        | Output after interpolation     |
+| ----------------------- | ------------------------------ |
+| `${name}`               | Resolved from context          |
+| `$${name}`              | Literal `${name}`              |
 | `$${{ secrets.TOKEN }}` | Literal `${{ secrets.TOKEN }}` |
 
 In **heredoc strings** (`<<-EOF`), `${{ }}` patterns pass through without
