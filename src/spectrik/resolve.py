@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_INTERP_PATTERN = re.compile(r"\$\$\{|(\$\{([^{}]+)\})")
 
 
 class Resolver:
@@ -32,3 +35,28 @@ class Resolver:
             current = current()
 
         return current
+
+    def _resolve_value(self, value: str) -> str | Any:
+        """Resolve ${...} interpolations in a single string value.
+
+        If the entire string is a single ${ref}, returns the resolved object
+        directly (preserving type). If ${ref} is embedded in a larger string,
+        the resolved value is stringified. Use $${...} for literal ${...}.
+        """
+        # Fast path: no interpolation
+        if "${" not in value:
+            return value
+
+        # Check if the entire string is a single interpolation
+        match = re.fullmatch(r"\$\{([^{}]+)\}", value)
+        if match:
+            return self._resolve_ref(match.group(1).strip())
+
+        # Mixed string: replace each interpolation with its stringified value
+        def _replace(m: re.Match) -> str:  # type: ignore[type-arg]
+            if m.group(0) == "$${":
+                return "${"
+            ref = m.group(2).strip()
+            return str(self._resolve_ref(ref))
+
+        return _INTERP_PATTERN.sub(_replace, value)
