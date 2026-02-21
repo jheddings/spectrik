@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 
 import hcl2
-import jinja2
 
 from .projects import Project
+from .resolve import Resolver
 from .workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -43,17 +43,16 @@ def load(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Load and parse a single HCL file, rendering Jinja2 templates with context."""
+    """Load and parse a single HCL file, resolving ${...} interpolations."""
     text = file.read_text()
-    ctx = context if context is not None else {}
-    env = jinja2.Environment(
-        undefined=jinja2.StrictUndefined,
-        keep_trailing_newline=True,
-        autoescape=False,
-    )
     try:
-        template = env.from_string(text)
-        text = template.render(ctx)
-    except jinja2.TemplateError as exc:
+        data = hcl2.loads(text)  # type: ignore[reportPrivateImportUsage]
+    except Exception as exc:
         raise ValueError(f"{file}: {exc}") from exc
-    return hcl2.loads(text)  # type: ignore[reportPrivateImportUsage]
+    if context:
+        resolver = Resolver(context)
+        try:
+            data = resolver.resolve(data)
+        except ValueError as exc:
+            raise ValueError(f"{file}: {exc}") from exc
+    return data
