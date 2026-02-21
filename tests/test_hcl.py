@@ -359,3 +359,26 @@ class TestInterpolation:
         )
         result = load(tmp_path / "test.hcl", context={"bp_name": "base"})
         assert result["project"][0]["app"]["use"] == ["base"]
+
+    def test_github_actions_escape(self, tmp_path):
+        """$${{ }} in HCL produces ${{ }} after resolution (GitHub Actions syntax)."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "workflow" {
+                token = "$${{ secrets.GITHUB_TOKEN }}"
+                repo  = "$${{ github.repository }}"
+                name  = "${app_name}"
+            }
+        """,
+        )
+        result = load(
+            tmp_path / "test.hcl",
+            context={"app_name": "myapp", "secrets": {"GITHUB_TOKEN": "HACKED"}},
+        )
+        proj = result["project"][0]["workflow"]
+        assert proj["token"] == "${{ secrets.GITHUB_TOKEN }}"
+        assert proj["repo"] == "${{ github.repository }}"
+        assert proj["name"] == "myapp"

@@ -8,6 +8,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# The [^{}]+ constraint is load-bearing: it prevents matching ${{ }} patterns
+# (e.g., GitHub Actions expressions) which must pass through unmodified.
 _INTERP_PATTERN = re.compile(r"\$\$\{|(\$\{([^{}]+)\})")
 
 

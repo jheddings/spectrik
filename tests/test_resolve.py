@@ -104,6 +104,31 @@ class TestResolveValue:
         result = r._resolve_value("${name} uses ${{ github.token }}")
         assert result == "myapp uses ${{ github.token }}"
 
+    def test_escaped_double_brace_produces_github_actions_syntax(self):
+        """$${{ }} from HCL parsing produces ${{ }} after resolver (GitHub Actions)."""
+        r = Resolver({"github": {"repository": "HACKED"}})
+        # python-hcl2 parses $${{ expr }} as the literal string "$${{ expr }}"
+        result = r._resolve_value("$${{ github.repository }}")
+        assert result == "${{ github.repository }}"
+
+    def test_hostile_context_cannot_inject_via_double_brace(self):
+        """Even with matching context keys, ${{ }} patterns are never resolved."""
+        r = Resolver(
+            {
+                "github": {"repository": "HACKED"},
+                "secrets": {"TOKEN": "HACKED"},
+            }
+        )
+        data = {
+            "token": "${{ secrets.TOKEN }}",
+            "repo": "$${{ github.repository }}",
+            "name": "${github.repository}",
+        }
+        result = r.resolve(data)
+        assert result["token"] == "${{ secrets.TOKEN }}"
+        assert result["repo"] == "${{ github.repository }}"
+        assert result["name"] == "HACKED"
+
 
 class TestResolve:
     """Test resolve: recursive dict/list walking."""
