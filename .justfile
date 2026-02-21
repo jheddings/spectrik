@@ -38,8 +38,12 @@ preflight: precommit test
 build: preflight
     uv build
 
+# verify no uncommitted changes to tracked files
+repo-guard:
+    test -z "$(git status --porcelain -uno)" || (echo "ERROR: working tree is dirty"; exit 1)
+
 # bump version, commit, tag, and push
-release bump="patch": preflight
+release bump="patch": preflight repo-guard
     #!/usr/bin/env bash
     uv version --bump {{bump}}
     VERSION=$(uv version --short)
