@@ -1,88 +1,159 @@
-"""Workspace — a mutable, typed collection of HCL-loaded projects."""
+"""Workspace — a mutable, typed collection of parsed projects."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Iterator, Mapping
-from pathlib import Path
 from typing import Any, overload
 
+from .blueprints import Blueprint
 from .projects import Project
+from .spec import _spec_registry
+from .specop import Absent, Ensure, Present, SpecOp
 
 logger = logging.getLogger(__name__)
 
+_STRATEGY_MAP: dict[str, type[SpecOp]] = {
+    "present": Present,
+    "ensure": Ensure,
+    "absent": Absent,
+}
+
+
+def _decode_spec(
+    spec_name: str,
+    attrs: dict[str, Any],
+) -> Any:
+    """Decode a spec block into a Specification instance using the registry."""
+    if spec_name not in _spec_registry:
+        raise ValueError(f"Unknown spec type: '{spec_name}'")
+    spec_cls = _spec_registry[spec_name]
+    logger.debug("Decoding spec '%s' -> %s", spec_name, spec_cls.__name__)
+    return spec_cls(**attrs)
+
+
+def _parse_ops(
+    block_data: dict[str, Any],
+) -> list[SpecOp]:
+    """Parse strategy blocks (present/ensure/absent) from a blueprint or project block.
+
+    HCL2 structure for strategy blocks:
+        {"ensure": [{"widget": {"color": "blue"}}, ...], ...}
+    """
+    ops: list[SpecOp] = []
+    for strategy_name, strategy_cls in _STRATEGY_MAP.items():
+        for spec_block in block_data.get(strategy_name, []):
+            # Each spec_block is {"spec_name": {attrs}}
+            for spec_name, attrs in spec_block.items():
+                spec_instance = _decode_spec(spec_name, dict(attrs))
+                ops.append(strategy_cls(spec_instance))
+    return ops
+
+
+def _resolve_blueprint(
+    name: str,
+    pending: dict[str, dict[str, Any]],
+    resolved: dict[str, Blueprint],
+    resolving: set[str],
+) -> Blueprint:
+    """Recursively resolve a single blueprint, handling includes."""
+    if name in resolved:
+        return resolved[name]
+    if name in resolving:
+        raise ValueError(f"Circular include detected: '{name}'")
+    if name not in pending:
+        raise ValueError(f"Unknown blueprint: '{name}'")
+    logger.debug("Resolving blueprint '%s'", name)
+    resolving.add(name)
+
+    bp_data = pending[name]
+    ops: list[SpecOp] = []
+
+    # Resolve includes first
+    for include_name in bp_data.get("include", []):
+        logger.debug("Blueprint '%s' includes '%s'", name, include_name)
+        included_bp = _resolve_blueprint(include_name, pending, resolved, resolving)
+        ops.extend(included_bp.ops)
+
+    # Parse own ops
+    ops.extend(_parse_ops(bp_data))
+
+    bp = Blueprint(name=name, ops=ops)
+    resolved[name] = bp
+    resolving.discard(name)
+    return bp
+
+
+def _build_project[P: Project](
+    name: str,
+    data: dict[str, Any],
+    blueprints: dict[str, Blueprint],
+    *,
+    project_type: type[P] = Project,  # type: ignore[assignment]
+) -> P:
+    """Build a single Project instance from parsed data."""
+    logger.debug("Building project '%s' as %s", name, project_type.__name__)
+    # Collect blueprints from 'use' references
+    proj_blueprints: list[Blueprint] = []
+    for bp_name in data.get("use", []):
+        if bp_name not in blueprints:
+            raise ValueError(f"Project '{name}' references unknown blueprint: '{bp_name}'")
+        proj_blueprints.append(blueprints[bp_name])
+
+    # Parse inline spec ops into an anonymous blueprint
+    inline_ops = _parse_ops(data)
+    if inline_ops:
+        proj_blueprints.append(Blueprint(name=f"{name}:inline", ops=inline_ops))
+
+    # Build project kwargs
+    proj_kwargs: dict[str, Any] = {"name": name, "blueprints": proj_blueprints}
+
+    # Pass through non-structural fields
+    skip_keys = {"use", "include"} | set(_STRATEGY_MAP.keys())
+    for key, value in data.items():
+        if key not in skip_keys:
+            proj_kwargs[key] = value
+
+    return project_type(**proj_kwargs)
+
 
 class Workspace[P: Project](Mapping[str, P]):
-    """Configured workspace that accumulates HCL data and resolves projects on access.
+    """Configured workspace that accumulates parsed data and resolves projects on access.
 
     Construct with an optional project_type (defaults to Project), then call
-    load() or scan() to add HCL data. Projects are resolved fresh on each
+    load() to add parsed data dicts. Projects are resolved fresh on each
     Mapping access.
     """
 
     def __init__(
         self,
         project_type: type[P] = Project,  # type: ignore[assignment]
-        *,
-        context: dict[str, Any] | None = None,
     ) -> None:
         self._project_type = project_type
-        self._context = context
         self._pending_blueprints: dict[str, dict[str, Any]] = {}
         self._pending_projects: dict[str, dict[str, Any]] = {}
 
-    def load(self, file: str | Path) -> None:
-        """Parse a single HCL file and extract blueprint/project blocks.
+    def load(self, data: dict[str, Any]) -> None:
+        """Extract blueprint and project blocks from a parsed data dict.
 
         Raises ValueError if any blueprint or project name is already loaded.
         """
-        from spectrik.hcl import load as hcl_load
-
-        path = Path(file)
-        logger.info("Loading '%s'", path)
-        doc = hcl_load(path, context=self._context)
-
-        # Extract blueprint blocks
-        for bp_block in doc.get("blueprint", []):
+        for bp_block in data.get("blueprint", []):
             for bp_name, bp_data in bp_block.items():
                 if bp_name in self._pending_blueprints:
                     raise ValueError(f"Duplicate blueprint: '{bp_name}'")
                 logger.debug("Found blueprint '%s'", bp_name)
                 self._pending_blueprints[bp_name] = bp_data
 
-        # Extract project blocks
-        for proj_block in doc.get("project", []):
+        for proj_block in data.get("project", []):
             for proj_name, proj_data in proj_block.items():
                 if proj_name in self._pending_projects:
                     raise ValueError(f"Duplicate project: '{proj_name}'")
                 logger.debug("Found project '%s'", proj_name)
                 self._pending_projects[proj_name] = proj_data
 
-    def scan(self, path: str | Path, *, recurse: bool = True) -> None:
-        """Discover .hcl files in a directory and load each one.
-
-        With recurse=True (default), walks subdirectories. Files are
-        processed in sorted order for deterministic behavior.
-        """
-        directory = Path(path)
-        if not directory.is_dir():
-            logger.warning("Directory '%s' does not exist; skipping scan", directory)
-            return
-
-        logger.info("Scanning '%s' (recurse=%s)", directory, recurse)
-
-        if recurse:
-            hcl_files = sorted(directory.rglob("*.hcl"))
-        else:
-            hcl_files = sorted(directory.glob("*.hcl"))
-
-        for hcl_file in hcl_files:
-            self.load(hcl_file)
-
     def _resolve(self) -> dict[str, P]:
         """Resolve all pending blueprints and build typed project instances."""
-        from spectrik.hcl import _build_project, _resolve_blueprint
-
         logger.debug(
             "Resolving %d blueprint(s) and %d project(s)",
             len(self._pending_blueprints),

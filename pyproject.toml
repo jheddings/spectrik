@@ -1,13 +1,12 @@
 [project]
 name = "spectrik"
-version = "0.2.0"
+version = "0.3.0"
 description = "A specification and blueprint manager for declarative configuration-as-code tools."
 authors = [{ name = "jheddings", email = "jheddings@gmail.com" }]
 requires-python = ">=3.12"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "jinja2>=3.1.6",
     "pydantic>=2.12.5",
     "python-hcl2>=7.3.1",
 ]

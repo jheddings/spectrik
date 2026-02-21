@@ -85,7 +85,7 @@ class TestLoad:
             "test.hcl",
             """
             project "p" {
-                description = "{{ greeting }}"
+                description = "${greeting}"
             }
         """,
         )
@@ -127,26 +127,12 @@ class TestLoad:
             "bad.hcl",
             """
         project "p" {
-            description = "{{ missing_var }}"
+            description = "${missing_var}"
         }
     """,
         )
         with pytest.raises(ValueError, match="bad.hcl"):
-            load(tmp_path / "bad.hcl", context={})
-
-    def test_load_jinja2_syntax_error_raises_with_filepath(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            ".",
-            "bad.hcl",
-            """
-        project "p" {
-            description = "{% if %}"
-        }
-    """,
-        )
-        with pytest.raises(ValueError, match="bad.hcl"):
-            load(tmp_path / "bad.hcl", context={})
+            load(tmp_path / "bad.hcl", context={"something_else": "x"})
 
 
 # -- hcl.scan() convenience function tests --
@@ -240,7 +226,7 @@ class TestScan:
             "test.hcl",
             """
             project "p" {
-                description = "{{ greeting }}"
+                description = "${greeting}"
             }
         """,
         )
@@ -265,110 +251,134 @@ class TestScan:
         assert len(ws["myproj"].blueprints) == 1
 
 
-# -- Jinja2 structural feature tests --
+# -- Interpolation feature tests --
 
 
-class TestJinja2Features:
-    """Test Jinja2 structural templating in HCL files."""
+class TestInterpolation:
+    """Test ${...} interpolation in HCL files."""
 
-    def test_conditional_includes_block(self, tmp_path):
+    def test_simple_variable(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            project "base" {
-                description = "always"
+            project "app" {
+                description = "${greeting}"
             }
-            {% if include_extra %}
-            project "extra" {
-                description = "conditional"
-            }
-            {% endif %}
         """,
         )
-        ws = scan(tmp_path, context={"include_extra": True})
-        assert "base" in ws
-        assert "extra" in ws
+        result = load(tmp_path / "test.hcl", context={"greeting": "hello"})
+        assert result["project"][0]["app"]["description"] == "hello"
 
-    def test_conditional_excludes_block(self, tmp_path):
+    def test_dotted_reference(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            project "base" {
-                description = "always"
+            project "app" {
+                description = "${config.region}"
             }
-            {% if include_extra %}
-            project "extra" {
-                description = "conditional"
-            }
-            {% endif %}
         """,
         )
-        ws = scan(tmp_path, context={"include_extra": False})
-        assert "base" in ws
-        assert "extra" not in ws
+        result = load(tmp_path / "test.hcl", context={"config": {"region": "us-east-1"}})
+        assert result["project"][0]["app"]["description"] == "us-east-1"
 
-    def test_loop_generates_blocks(self, tmp_path):
+    def test_embedded_interpolation(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            {% for name in projects %}
-            project "{{ name }}" {
-                description = "generated"
+            project "app" {
+                description = "${env.HOME}/.config/${name}"
             }
-            {% endfor %}
         """,
         )
-        ws = scan(tmp_path, context={"projects": ["alpha", "beta", "gamma"]})
-        assert len(ws) == 3
-        assert "alpha" in ws
-        assert "beta" in ws
-        assert "gamma" in ws
+        result = load(
+            tmp_path / "test.hcl",
+            context={"env": {"HOME": "/home/user"}, "name": "myapp"},
+        )
+        assert result["project"][0]["app"]["description"] == "/home/user/.config/myapp"
 
-    def test_comment_stripped(self, tmp_path):
+    def test_callable_context(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            {# This Jinja2 comment should not appear in output #}
-            project "p" {
-                description = "test"
+            project "app" {
+                description = "${cwd}/data"
             }
         """,
         )
-        ws = scan(tmp_path, context={})
-        assert ws["p"].description == "test"
+        result = load(tmp_path / "test.hcl", context={"cwd": lambda: "/tmp/work"})
+        assert result["project"][0]["app"]["description"] == "/tmp/work/data"
 
-    def test_nested_context_access(self, tmp_path):
+    def test_undefined_raises_with_filepath(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            project "p" {
-                description = "{{ config.region }}"
+            project "app" {
+                description = "${missing}"
             }
         """,
         )
-        ws = scan(tmp_path, context={"config": {"region": "us-east-1"}})
-        assert ws["p"].description == "us-east-1"
+        with pytest.raises(ValueError, match=str(tmp_path)):
+            load(tmp_path / "test.hcl", context={"other": "x"})
 
-    def test_jinja2_filter(self, tmp_path):
+    def test_no_context_leaves_dollar_braces(self, tmp_path):
+        """Without context, ${...} strings pass through from hcl2 as-is."""
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            project "p" {
-                description = "{{ name | upper }}"
+            project "app" {
+                description = "${name}"
             }
         """,
         )
-        ws = scan(tmp_path, context={"name": "hello"})
-        assert ws["p"].description == "HELLO"
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "${name}"
+
+    def test_nested_in_list(self, tmp_path):
+        """Interpolation works inside list values."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "app" {
+                use = ["${bp_name}"]
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl", context={"bp_name": "base"})
+        assert result["project"][0]["app"]["use"] == ["base"]
+
+    def test_github_actions_escape(self, tmp_path):
+        """$${{ }} in HCL produces ${{ }} after resolution (GitHub Actions syntax)."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "workflow" {
+                token = "$${{ secrets.GITHUB_TOKEN }}"
+                repo  = "$${{ github.repository }}"
+                name  = "${app_name}"
+            }
+        """,
+        )
+        result = load(
+            tmp_path / "test.hcl",
+            context={"app_name": "myapp", "secrets": {"GITHUB_TOKEN": "HACKED"}},
+        )
+        proj = result["project"][0]["workflow"]
+        assert proj["token"] == "${{ secrets.GITHUB_TOKEN }}"
+        assert proj["repo"] == "${{ github.repository }}"
+        assert proj["name"] == "myapp"
