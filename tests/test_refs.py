@@ -1,4 +1,4 @@
-"""Tests for OperationRef."""
+"""Tests for OperationRef and BlueprintRef."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from spectrik.context import Context
 from spectrik.projects import Project
 from spectrik.spec import Specification, _spec_registry
 from spectrik.specop import Absent, Ensure, Present
-from spectrik.workspace import OperationRef, Workspace
+from spectrik.workspace import BlueprintRef, OperationRef, Workspace
 
 
 class TrackingSpec(Specification["Project"]):
@@ -73,3 +73,62 @@ class TestOperationRef:
     def test_label_set(self):
         ref = OperationRef(name="widget", strategy="ensure", attrs={}, label="my-label")
         assert ref.label == "my-label"
+
+
+class TestBlueprintRef:
+    def test_resolve_simple(self):
+        op = OperationRef(name="widget", strategy="ensure", attrs={"color": "red"})
+        ref = BlueprintRef(name="simple", includes=[], ops=[op])
+        ws = Workspace()
+        bp = ref.resolve(ws)
+        assert bp.name == "simple"
+        assert len(bp.ops) == 1
+
+    def test_resolve_with_includes(self):
+        base_op = OperationRef(name="widget", strategy="ensure", attrs={"color": "red"})
+        base_ref = BlueprintRef(name="base", includes=[], ops=[base_op])
+
+        ext_op = OperationRef(name="widget", strategy="present", attrs={"size": "large"})
+        ext_ref = BlueprintRef(name="extended", includes=["base"], ops=[ext_op])
+
+        ws = Workspace()
+        ws.add(base_ref)
+        ws.add(ext_ref)
+
+        bp = ext_ref.resolve(ws)
+        assert bp.name == "extended"
+        assert len(bp.ops) == 2
+
+    def test_resolve_circular_include_raises(self):
+        ref_a = BlueprintRef(name="a", includes=["b"], ops=[])
+        ref_b = BlueprintRef(name="b", includes=["a"], ops=[])
+
+        ws = Workspace()
+        ws.add(ref_a)
+        ws.add(ref_b)
+
+        with pytest.raises(ValueError, match="Circular"):
+            ref_a.resolve(ws)
+
+    def test_resolve_unknown_include_raises(self):
+        ref = BlueprintRef(name="broken", includes=["missing"], ops=[])
+        ws = Workspace()
+        ws.add(ref)
+
+        with pytest.raises(KeyError):
+            ref.resolve(ws)
+
+    def test_empty_blueprint(self):
+        ref = BlueprintRef(name="empty", includes=[], ops=[])
+        ws = Workspace()
+        bp = ref.resolve(ws)
+        assert bp.name == "empty"
+        assert len(bp.ops) == 0
+
+    def test_description_default(self):
+        ref = BlueprintRef(name="nodesc", includes=[], ops=[])
+        assert ref.description == ""
+
+    def test_description_set(self):
+        ref = BlueprintRef(name="withdesc", includes=[], ops=[], description="A blueprint")
+        assert ref.description == "A blueprint"

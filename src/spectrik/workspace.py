@@ -50,6 +50,37 @@ class OperationRef(WorkspaceRef):
         return strategy_cls(spec_instance)
 
 
+@dataclass
+class BlueprintRef(WorkspaceRef):
+    """A blueprint reference — a named collection of operations with optional includes."""
+
+    includes: list[str]
+    ops: list[OperationRef]
+    description: str = ""
+
+    def resolve(
+        self,
+        workspace: Workspace,
+        _resolving: set[str] | None = None,
+    ) -> Blueprint:
+        resolving = _resolving or set()
+        if self.name in resolving:
+            raise ValueError(f"Circular include detected: '{self.name}'")
+        resolving.add(self.name)
+
+        all_ops: list[SpecOp] = []
+
+        for inc_name in self.includes:
+            included_ref = workspace.blueprints[inc_name]
+            included_bp = included_ref.resolve(workspace, resolving)
+            all_ops.extend(included_bp.ops)
+
+        all_ops.extend(op.resolve(workspace) for op in self.ops)
+
+        resolving.discard(self.name)
+        return Blueprint(name=self.name, ops=all_ops)
+
+
 def _decode_spec(
     spec_name: str,
     attrs: dict[str, Any],
@@ -157,6 +188,17 @@ class Workspace[P: Project](Mapping[str, P]):
         self._project_type = project_type
         self._pending_blueprints: dict[str, dict[str, Any]] = {}
         self._pending_projects: dict[str, dict[str, Any]] = {}
+        self._blueprint_refs: dict[str, BlueprintRef] = {}
+
+    @property
+    def blueprints(self) -> dict[str, BlueprintRef]:
+        """Return the blueprint ref registry."""
+        return self._blueprint_refs
+
+    def add(self, ref: WorkspaceRef) -> None:
+        """Register a workspace reference."""
+        if isinstance(ref, BlueprintRef):
+            self._blueprint_refs[ref.name] = ref
 
     def load(self, data: dict[str, Any]) -> None:
         """Extract blueprint and project blocks from a parsed data dict.
