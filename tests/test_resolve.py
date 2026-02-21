@@ -103,3 +103,47 @@ class TestResolveValue:
         r = Resolver({"name": "myapp"})
         result = r._resolve_value("${name} uses ${{ github.token }}")
         assert result == "myapp uses ${{ github.token }}"
+
+
+class TestResolve:
+    """Test resolve: recursive dict/list walking."""
+
+    def test_simple_dict(self):
+        r = Resolver({"name": "app"})
+        data = {"title": "${name}"}
+        assert r.resolve(data) == {"title": "app"}
+
+    def test_nested_dict(self):
+        r = Resolver({"host": "localhost"})
+        data = {"server": {"address": "${host}"}}
+        assert r.resolve(data) == {"server": {"address": "localhost"}}
+
+    def test_list_values(self):
+        r = Resolver({"x": "a", "y": "b"})
+        data = {"items": ["${x}", "${y}"]}
+        assert r.resolve(data) == {"items": ["a", "b"]}
+
+    def test_list_of_dicts(self):
+        r = Resolver({"name": "app"})
+        data = {"entries": [{"label": "${name}"}]}
+        assert r.resolve(data) == {"entries": [{"label": "app"}]}
+
+    def test_non_string_values_untouched(self):
+        r = Resolver({"name": "app"})
+        data = {"count": 5, "flag": True, "ratio": 3.14, "empty": None}
+        assert r.resolve(data) == {"count": 5, "flag": True, "ratio": 3.14, "empty": None}
+
+    def test_original_dict_not_mutated(self):
+        r = Resolver({"name": "app"})
+        data = {"title": "${name}"}
+        r.resolve(data)
+        assert data == {"title": "${name}"}
+
+    def test_empty_dict(self):
+        r = Resolver({"name": "app"})
+        assert r.resolve({}) == {}
+
+    def test_empty_context(self):
+        r = Resolver()
+        data = {"title": "no interpolation"}
+        assert r.resolve(data) == {"title": "no interpolation"}

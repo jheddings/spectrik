@@ -60,3 +60,16 @@ class Resolver:
             return str(self._resolve_ref(ref))
 
         return _INTERP_PATTERN.sub(_replace, value)
+
+    def resolve(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Recursively walk a parsed dict and resolve all ${...} interpolations."""
+        return self._walk(data)
+
+    def _walk(self, obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {k: self._walk(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._walk(item) for item in obj]
+        if isinstance(obj, str):
+            return self._resolve_value(obj)
+        return obj
