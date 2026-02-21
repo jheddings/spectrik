@@ -44,6 +44,8 @@ class OperationRef(WorkspaceRef):
     def resolve(self, workspace: Workspace) -> SpecOp:
         if self.name not in _spec_registry:
             raise ValueError(f"Unknown spec type: '{self.name}'")
+        if self.strategy not in _STRATEGY_MAP:
+            raise ValueError(f"Unknown strategy: '{self.strategy}'")
         spec_cls = _spec_registry[self.name]
         spec_instance = spec_cls(**self.attrs)
         strategy_cls = _STRATEGY_MAP[self.strategy]
@@ -58,12 +60,10 @@ class BlueprintRef(WorkspaceRef):
     ops: list[OperationRef]
     description: str = ""
 
-    def resolve(
-        self,
-        workspace: Workspace,
-        _resolving: set[str] | None = None,
-    ) -> Blueprint:
-        resolving = _resolving or set()
+    def resolve(self, workspace: Workspace) -> Blueprint:
+        return self._resolve(workspace, set())
+
+    def _resolve(self, workspace: Workspace, resolving: set[str]) -> Blueprint:
         if self.name in resolving:
             raise ValueError(f"Circular include detected: '{self.name}'")
         resolving.add(self.name)
@@ -72,7 +72,7 @@ class BlueprintRef(WorkspaceRef):
 
         for inc_name in self.includes:
             included_ref = workspace.blueprints[inc_name]
-            included_bp = included_ref.resolve(workspace, resolving)
+            included_bp = included_ref._resolve(workspace, resolving)
             all_ops.extend(included_bp.ops)
 
         all_ops.extend(op.resolve(workspace) for op in self.ops)

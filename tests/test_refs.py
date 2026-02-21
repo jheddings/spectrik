@@ -66,6 +66,12 @@ class TestOperationRef:
         with pytest.raises(ValueError, match="Unknown spec type"):
             ref.resolve(ws)
 
+    def test_resolve_unknown_strategy_raises(self):
+        ref = OperationRef(name="widget", strategy="invalid", attrs={})
+        ws = Workspace()
+        with pytest.raises(ValueError, match="Unknown strategy"):
+            ref.resolve(ws)
+
     def test_label_defaults_none(self):
         ref = OperationRef(name="widget", strategy="ensure", attrs={})
         assert ref.label is None
