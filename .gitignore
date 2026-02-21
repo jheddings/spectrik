@@ -15,6 +15,7 @@ __pycache__
 
 local.env
 local.yaml
+settings.local.json
 
 dist
 lib
