@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -17,20 +18,33 @@ logger = logging.getLogger(__name__)
 _STRATEGY_NAMES = frozenset(("present", "ensure", "absent"))
 
 
+def _iter_blocks(
+    data: dict[str, Any],
+    key: str,
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield (name, block_data) pairs from an HCL2 labeled block list.
+
+    HCL2 represents labeled blocks as a list of single-key dicts:
+        {"blueprint": [{"base": {...}}, {"extended": {...}}]}
+
+    This helper flattens that into: ("base", {...}), ("extended", {...})
+    """
+    for block in data.get(key, []):
+        yield from block.items()
+
+
+def _parse_op(strategy: str, spec_name: str, attrs: dict[str, Any]) -> OperationRef:
+    """Create a single OperationRef from HCL strategy block data."""
+    return OperationRef(name=spec_name, strategy=strategy, attrs=dict(attrs))
+
+
 def _parse_ops(block_data: dict[str, Any]) -> list[OperationRef]:
     """Translate HCL strategy blocks into OperationRefs."""
-    ops: list[OperationRef] = []
-    for strategy_name in _STRATEGY_NAMES:
-        for spec_block in block_data.get(strategy_name, []):
-            for spec_name, attrs in spec_block.items():
-                ops.append(
-                    OperationRef(
-                        name=spec_name,
-                        strategy=strategy_name,
-                        attrs=dict(attrs),
-                    )
-                )
-    return ops
+    return [
+        _parse_op(strategy, spec_name, attrs)
+        for strategy in _STRATEGY_NAMES
+        for spec_name, attrs in _iter_blocks(block_data, strategy)
+    ]
 
 
 def _parse_blueprint(name: str, data: dict[str, Any]) -> BlueprintRef:
@@ -64,16 +78,18 @@ def parse(
     data = load(file, context=context)
     refs: list[WorkspaceRef] = []
 
-    for block_type, blocks in data.items():
+    for block_type in data:
         match block_type:
             case "blueprint":
-                for block in blocks:
-                    for name, block_data in block.items():
-                        refs.append(_parse_blueprint(name, block_data))
+                refs.extend(
+                    _parse_blueprint(name, block_data)
+                    for name, block_data in _iter_blocks(data, block_type)
+                )
             case "project":
-                for block in blocks:
-                    for name, block_data in block.items():
-                        refs.append(_parse_project(name, block_data))
+                refs.extend(
+                    _parse_project(name, block_data)
+                    for name, block_data in _iter_blocks(data, block_type)
+                )
             case _:
                 raise ValueError(f"Unsupported block type: '{block_type}'")
 
