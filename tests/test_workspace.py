@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-import spectrik.hcl as hcl
 from spectrik.context import Context
 from spectrik.projects import Project
 from spectrik.spec import Specification, _spec_registry
-from spectrik.workspace import Workspace
+from spectrik.workspace import BlueprintRef, OperationRef, ProjectRef, Workspace
 
 
 class TestWorkspaceConstruction:
@@ -60,6 +57,9 @@ class TestWorkspaceConstruction:
         assert "Custom" in repr(ws)
 
 
+# -- Helpers for ref-based tests --
+
+
 class TrackingSpec(Specification["Project"]):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -74,14 +74,7 @@ class TrackingSpec(Specification["Project"]):
         pass
 
 
-def _write_hcl(tmp_path: Path, filename: str, content: str) -> Path:
-    """Write an HCL file directly into tmp_path (flat structure)."""
-    f = tmp_path / filename
-    f.write_text(content)
-    return f
-
-
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def _clean_registry():
     saved = _spec_registry.copy()
     _spec_registry.clear()
@@ -91,255 +84,138 @@ def _clean_registry():
     _spec_registry.update(saved)
 
 
-class TestWorkspaceLoad:
-    def test_load_single_file_with_project(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "myproj" {
-                description = "test"
-            }
-        """,
-        )
+class TestWorkspaceAdd:
+    def test_add_project_ref(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ref = ProjectRef(name="myproj", use=[], ops=[], description="test")
+        ws.add(ref)
         assert "myproj" in ws
-        assert ws["myproj"].description == "test"
+        proj = ws["myproj"]
+        assert proj.name == "myproj"
+        assert proj.description == "test"
 
-    def test_load_file_with_blueprint_and_project(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-            project "myproj" {
-                use = ["base"]
-            }
-        """,
-        )
+    @pytest.mark.usefixtures("_clean_registry")
+    def test_add_blueprint_ref(self):
+        op = OperationRef(name="widget", strategy="ensure", attrs={"color": "red"})
+        ref = BlueprintRef(name="base", includes=[], ops=[op])
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
-        assert len(ws["myproj"].blueprints) == 1
+        ws.add(ref)
+        assert "base" in ws.blueprints
 
-    def test_load_multiple_files(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "a.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "b.hcl",
-            """
-            project "myproj" {
-                use = ["base"]
-            }
-        """,
-        )
+    @pytest.mark.usefixtures("_clean_registry")
+    def test_add_multiple_refs(self):
+        op = OperationRef(name="widget", strategy="ensure", attrs={"color": "red"})
+        bp = BlueprintRef(name="base", includes=[], ops=[op])
+        proj = ProjectRef(name="myproj", use=["base"], ops=[])
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "a.hcl"))
-        ws.load(hcl.load(tmp_path / "b.hcl"))
-        assert len(ws["myproj"].blueprints) == 1
+        ws.add(bp, proj)
+        assert "base" in ws.blueprints
+        assert "myproj" in ws
 
-    def test_load_duplicate_blueprint_raises(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "a.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "b.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "blue" }
-            }
-        """,
-        )
+    @pytest.mark.usefixtures("_clean_registry")
+    def test_add_duplicate_blueprint_raises(self):
+        op = OperationRef(name="widget", strategy="ensure", attrs={"color": "red"})
+        ref1 = BlueprintRef(name="base", includes=[], ops=[op])
+        ref2 = BlueprintRef(name="base", includes=[], ops=[op])
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "a.hcl"))
+        ws.add(ref1)
         with pytest.raises(ValueError, match="base"):
-            ws.load(hcl.load(tmp_path / "b.hcl"))
+            ws.add(ref2)
 
-    def test_load_duplicate_project_raises(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "a.hcl",
-            """
-            project "myproj" { description = "first" }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "b.hcl",
-            """
-            project "myproj" { description = "second" }
-        """,
-        )
+    def test_add_duplicate_project_raises(self):
+        ref1 = ProjectRef(name="myproj", use=[], ops=[])
+        ref2 = ProjectRef(name="myproj", use=[], ops=[])
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "a.hcl"))
+        ws.add(ref1)
         with pytest.raises(ValueError, match="myproj"):
-            ws.load(hcl.load(tmp_path / "b.hcl"))
+            ws.add(ref2)
 
-    def test_load_blueprint_only_file(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            blueprint "base" {
-                ensure "widget" { color = "red" }
-            }
-        """,
-        )
+    @pytest.mark.usefixtures("_clean_registry")
+    def test_add_unsupported_type_raises(self):
+        op_ref = OperationRef(name="widget", strategy="ensure", attrs={})
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
-        assert len(ws) == 0  # no projects
-        assert len(ws._pending_blueprints) == 1
+        with pytest.raises(TypeError, match="Unsupported ref type"):
+            ws.add(op_ref)
 
-    def test_repr_after_load(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            blueprint "base" {}
-            project "myproj" { description = "test" }
-        """,
-        )
+    def test_iadd_single_ref(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
-        assert "blueprints=1" in repr(ws)
-        assert "projects=1" in repr(ws)
+        ref = ProjectRef(name="myproj", use=[], ops=[])
+        ws += ref
+        assert "myproj" in ws
+
+    def test_iadd_returns_self(self):
+        ws = Workspace()
+        ref = ProjectRef(name="myproj", use=[], ops=[])
+        result = ws.__iadd__(ref)
+        assert result is ws
 
 
 class TestWorkspaceMapping:
-    """Test Mapping protocol with loaded HCL data."""
+    """Test Mapping protocol with refs constructed directly."""
 
-    def test_values(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-            project "b" { description = "beta" }
-        """,
-        )
+    def test_values(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(
+            ProjectRef(name="a", use=[], ops=[], description="alpha"),
+            ProjectRef(name="b", use=[], ops=[], description="beta"),
+        )
         names = sorted(p.name for p in ws.values())
         assert names == ["a", "b"]
 
-    def test_items(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-        """,
-        )
+    def test_items(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
         pairs = list(ws.items())
         assert len(pairs) == 1
         assert pairs[0][0] == "a"
         assert pairs[0][1].description == "alpha"
 
-    def test_keys(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-            project "b" { description = "beta" }
-        """,
-        )
+    def test_keys(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(
+            ProjectRef(name="a", use=[], ops=[], description="alpha"),
+            ProjectRef(name="b", use=[], ops=[], description="beta"),
+        )
         assert sorted(ws.keys()) == ["a", "b"]
 
-    def test_fresh_resolution_each_access(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-        """,
-        )
+    def test_fresh_resolution_each_access(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
         proj1 = ws["a"]
         proj2 = ws["a"]
-        # Fresh resolution means different object instances
         assert proj1 is not proj2
         assert proj1.name == proj2.name
 
-    def test_filter_with_loaded_data(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-            project "b" { description = "beta" }
-            project "c" { description = "gamma" }
-        """,
-        )
+    def test_filter(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(
+            ProjectRef(name="a", use=[], ops=[], description="alpha"),
+            ProjectRef(name="b", use=[], ops=[], description="beta"),
+            ProjectRef(name="c", use=[], ops=[], description="gamma"),
+        )
         result = ws.filter(["a", "c"])
         assert len(result) == 2
         assert result[0].name == "a"
         assert result[1].name == "c"
 
-    def test_filter_skips_missing(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-        """,
-        )
+    def test_filter_skips_missing(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
         result = ws.filter(["a", "missing"])
         assert len(result) == 1
 
-    def test_filter_empty_names(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "a" { description = "alpha" }
-        """,
-        )
+    def test_filter_empty_names(self):
         ws = Workspace()
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
         assert ws.filter([]) == []
 
-    def test_custom_project_type(self, tmp_path):
+    def test_custom_project_type(self):
         class Custom(Project):
             repo: str = ""
 
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "myproj" {
-                repo = "owner/repo"
-            }
-        """,
-        )
         ws = Workspace(project_type=Custom)
-        ws.load(hcl.load(tmp_path / "test.hcl"))
+        ref = ProjectRef(name="myproj", use=[], ops=[], attrs={"repo": "owner/repo"})
+        ws.add(ref)
         proj = ws["myproj"]
         assert isinstance(proj, Custom)
         assert proj.repo == "owner/repo"
