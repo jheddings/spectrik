@@ -20,8 +20,14 @@ class Workspace[P: Project](Mapping[str, P]):
     Mapping access.
     """
 
-    def __init__(self, project_type: type[P] = Project) -> None:  # type: ignore[assignment]
+    def __init__(
+        self,
+        project_type: type[P] = Project,  # type: ignore[assignment]
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> None:
         self._project_type = project_type
+        self._context = context
         self._pending_blueprints: dict[str, dict[str, Any]] = {}
         self._pending_projects: dict[str, dict[str, Any]] = {}
 
@@ -34,7 +40,7 @@ class Workspace[P: Project](Mapping[str, P]):
 
         path = Path(file)
         logger.info("Loading '%s'", path)
-        doc = hcl_load(path)
+        doc = hcl_load(path, context=self._context)
 
         # Extract blueprint blocks
         for bp_block in doc.get("blueprint", []):

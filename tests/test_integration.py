@@ -128,6 +128,38 @@ class TestEndToEnd:
         proj.build()
         assert CountingSpec.apply_count == 1
 
+    def test_full_pipeline_with_jinja2_context(self, tmp_path):
+        """Jinja2 context flows through scan -> workspace -> load -> parse -> build."""
+        _write_hcl(
+            tmp_path,
+            "config.hcl",
+            """
+            blueprint "base" {
+                ensure "counter" { id = "{{ prefix }}-1" }
+            }
+            {% for name in apps %}
+            project "{{ name }}" {
+                description = "Generated app"
+                use = ["base"]
+            }
+            {% endfor %}
+        """,
+        )
+
+        import spectrik.hcl as hcl
+
+        ws = hcl.scan(
+            tmp_path,
+            project_type=AppProject,
+            context={"prefix": "prod", "apps": ["web", "api"]},
+        )
+        assert len(ws) == 2
+        assert "web" in ws
+        assert "api" in ws
+
+        ws["web"].build()
+        assert CountingSpec.apply_count == 1
+
     def test_programmatic_api(self):
         """Test building specs/blueprints/projects without HCL."""
         s = CountingSpec(id="manual")

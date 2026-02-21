@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -78,6 +77,76 @@ class TestLoad:
         )
         result = load(tmp_path / "test.hcl")
         assert "blueprint" in result
+
+    def test_load_with_context_renders_variables(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ greeting }}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl", context={"greeting": "hello"})
+        assert result["project"][0]["p"]["description"] == "hello"
+
+    def test_load_without_context_passes_through(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "plain"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["p"]["description"] == "plain"
+
+    def test_load_empty_context_passes_through(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "plain"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl", context={})
+        assert result["project"][0]["p"]["description"] == "plain"
+
+    def test_load_undefined_var_raises_with_filepath(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "bad.hcl",
+            """
+        project "p" {
+            description = "{{ missing_var }}"
+        }
+    """,
+        )
+        with pytest.raises(ValueError, match="bad.hcl"):
+            load(tmp_path / "bad.hcl", context={})
+
+    def test_load_jinja2_syntax_error_raises_with_filepath(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "bad.hcl",
+            """
+        project "p" {
+            description = "{% if %}"
+        }
+    """,
+        )
+        with pytest.raises(ValueError, match="bad.hcl"):
+            load(tmp_path / "bad.hcl", context={})
 
 
 # -- hcl.scan() convenience function tests --
@@ -164,6 +233,20 @@ class TestScan:
         ws = scan(tmp_path / "nonexistent")
         assert len(ws) == 0
 
+    def test_scan_with_context(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "p" {
+                description = "{{ greeting }}"
+            }
+        """,
+        )
+        ws = scan(tmp_path, context={"greeting": "hello"})
+        assert ws["p"].description == "hello"
+
     def test_scan_with_blueprints_and_projects(self, tmp_path):
         _write_hcl(
             tmp_path,
@@ -182,143 +265,110 @@ class TestScan:
         assert len(ws["myproj"].blueprints) == 1
 
 
-# -- Variable interpolation tests --
+# -- Jinja2 structural feature tests --
 
 
-class TestVariableInterpolation:
-    def test_env_var_expansion(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("SPECTRIK_TEST_VAR", "/test/path")
+class TestJinja2Features:
+    """Test Jinja2 structural templating in HCL files."""
+
+    def test_conditional_includes_block(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            blueprint "interp" {
-                ensure "widget" {
-                    color = "${env.SPECTRIK_TEST_VAR}/sub"
-                }
+            project "base" {
+                description = "always"
             }
-            project "p" { use = ["interp"] }
+            {% if include_extra %}
+            project "extra" {
+                description = "conditional"
+            }
+            {% endif %}
         """,
         )
-        ws = scan(tmp_path)
-        op = ws["p"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == "/test/path/sub"
+        ws = scan(tmp_path, context={"include_extra": True})
+        assert "base" in ws
+        assert "extra" in ws
 
-    def test_cwd_expansion(self, tmp_path):
+    def test_conditional_excludes_block(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            blueprint "interp" {
-                ensure "widget" {
-                    color = "${CWD}/file"
-                }
+            project "base" {
+                description = "always"
             }
-            project "p" { use = ["interp"] }
+            {% if include_extra %}
+            project "extra" {
+                description = "conditional"
+            }
+            {% endif %}
         """,
         )
-        ws = scan(tmp_path)
-        op = ws["p"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == f"{os.getcwd()}/file"
+        ws = scan(tmp_path, context={"include_extra": False})
+        assert "base" in ws
+        assert "extra" not in ws
 
-    def test_unknown_env_var_expands_to_empty(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("SPECTRIK_NONEXISTENT", raising=False)
+    def test_loop_generates_blocks(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            blueprint "interp" {
-                ensure "widget" {
-                    color = "${env.SPECTRIK_NONEXISTENT}"
-                }
+            {% for name in projects %}
+            project "{{ name }}" {
+                description = "generated"
             }
-            project "p" { use = ["interp"] }
+            {% endfor %}
         """,
         )
-        ws = scan(tmp_path)
-        op = ws["p"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == ""
+        ws = scan(tmp_path, context={"projects": ["alpha", "beta", "gamma"]})
+        assert len(ws) == 3
+        assert "alpha" in ws
+        assert "beta" in ws
+        assert "gamma" in ws
 
-    def test_multiple_vars_in_one_string(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("SPECTRIK_A", "hello")
-        monkeypatch.setenv("SPECTRIK_B", "world")
+    def test_comment_stripped(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            blueprint "interp" {
-                ensure "widget" {
-                    color = "${env.SPECTRIK_A}-${env.SPECTRIK_B}"
-                }
+            {# This Jinja2 comment should not appear in output #}
+            project "p" {
+                description = "test"
             }
-            project "p" { use = ["interp"] }
         """,
         )
-        ws = scan(tmp_path)
-        op = ws["p"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == "hello-world"
+        ws = scan(tmp_path, context={})
+        assert ws["p"].description == "test"
 
-    def test_no_vars_unchanged(self, tmp_path):
+    def test_nested_context_access(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            blueprint "interp" {
-                ensure "widget" {
-                    color = "plain-value"
-                }
+            project "p" {
+                description = "{{ config.region }}"
             }
-            project "p" { use = ["interp"] }
         """,
         )
-        ws = scan(tmp_path)
-        op = ws["p"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == "plain-value"
+        ws = scan(tmp_path, context={"config": {"region": "us-east-1"}})
+        assert ws["p"].description == "us-east-1"
 
-    def test_non_string_values_unchanged(self, tmp_path):
+    def test_jinja2_filter(self, tmp_path):
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            blueprint "interp" {
-                ensure "widget" {
-                    color = 42
-                }
-            }
-            project "p" { use = ["interp"] }
-        """,
-        )
-        ws = scan(tmp_path)
-        op = ws["p"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == 42
-
-    def test_vars_in_project_inline_specs(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("SPECTRIK_TEST_VAR", "resolved")
-        _write_hcl(
-            tmp_path,
-            ".",
-            "test.hcl",
-            """
-            project "myproj" {
-                ensure "widget" {
-                    color = "${env.SPECTRIK_TEST_VAR}"
-                }
+            project "p" {
+                description = "{{ name | upper }}"
             }
         """,
         )
-        ws = scan(tmp_path)
-        op = ws["myproj"].blueprints[0].ops[0]
-        assert isinstance(op.spec, TrackingSpec)
-        assert op.spec.kwargs["color"] == "resolved"
+        ws = scan(tmp_path, context={"name": "hello"})
+        assert ws["p"].description == "HELLO"
