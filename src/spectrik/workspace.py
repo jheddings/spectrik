@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, overload
 
 from .blueprints import Blueprint
@@ -79,6 +79,34 @@ class BlueprintRef(WorkspaceRef):
 
         resolving.discard(self.name)
         return Blueprint(name=self.name, ops=all_ops)
+
+
+@dataclass
+class ProjectRef(WorkspaceRef):
+    """A project reference — a named build target with blueprints and inline ops."""
+
+    use: list[str]
+    ops: list[OperationRef]
+    description: str = ""
+    attrs: dict[str, Any] = field(default_factory=dict)
+
+    def resolve(self, workspace: Workspace) -> Project:
+        blueprints: list[Blueprint] = []
+
+        for bp_name in self.use:
+            bp_ref = workspace.blueprints[bp_name]
+            blueprints.append(bp_ref.resolve(workspace))
+
+        inline_ops = [op.resolve(workspace) for op in self.ops]
+        if inline_ops:
+            blueprints.append(Blueprint(name=f"{self.name}:inline", ops=inline_ops))
+
+        return workspace.project_type(
+            name=self.name,
+            description=self.description,
+            blueprints=blueprints,
+            **self.attrs,
+        )
 
 
 def _decode_spec(
@@ -189,6 +217,12 @@ class Workspace[P: Project](Mapping[str, P]):
         self._pending_blueprints: dict[str, dict[str, Any]] = {}
         self._pending_projects: dict[str, dict[str, Any]] = {}
         self._blueprint_refs: dict[str, BlueprintRef] = {}
+        self._project_refs: dict[str, ProjectRef] = {}
+
+    @property
+    def project_type(self) -> type[P]:
+        """Return the project type for this workspace."""
+        return self._project_type
 
     @property
     def blueprints(self) -> dict[str, BlueprintRef]:
@@ -199,6 +233,8 @@ class Workspace[P: Project](Mapping[str, P]):
         """Register a workspace reference."""
         if isinstance(ref, BlueprintRef):
             self._blueprint_refs[ref.name] = ref
+        elif isinstance(ref, ProjectRef):
+            self._project_refs[ref.name] = ref
 
     def load(self, data: dict[str, Any]) -> None:
         """Extract blueprint and project blocks from a parsed data dict.
