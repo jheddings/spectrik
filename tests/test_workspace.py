@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import spectrik.hcl as hcl
 from spectrik.context import Context
 from spectrik.projects import Project
 from spectrik.spec import Specification, _spec_registry
@@ -102,23 +103,9 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         assert "myproj" in ws
         assert ws["myproj"].description == "test"
-
-    def test_load_accepts_string_path(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "myproj" {
-                description = "test"
-            }
-        """,
-        )
-        ws = Workspace()
-        ws.load(str(tmp_path / "test.hcl"))
-        assert "myproj" in ws
 
     def test_load_file_with_blueprint_and_project(self, tmp_path):
         _write_hcl(
@@ -134,7 +121,7 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         assert len(ws["myproj"].blueprints) == 1
 
     def test_load_multiple_files(self, tmp_path):
@@ -157,8 +144,8 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "a.hcl")
-        ws.load(tmp_path / "b.hcl")
+        ws.load(hcl.load(tmp_path / "a.hcl"))
+        ws.load(hcl.load(tmp_path / "b.hcl"))
         assert len(ws["myproj"].blueprints) == 1
 
     def test_load_duplicate_blueprint_raises(self, tmp_path):
@@ -181,9 +168,9 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "a.hcl")
+        ws.load(hcl.load(tmp_path / "a.hcl"))
         with pytest.raises(ValueError, match="base"):
-            ws.load(tmp_path / "b.hcl")
+            ws.load(hcl.load(tmp_path / "b.hcl"))
 
     def test_load_duplicate_project_raises(self, tmp_path):
         _write_hcl(
@@ -201,9 +188,9 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "a.hcl")
+        ws.load(hcl.load(tmp_path / "a.hcl"))
         with pytest.raises(ValueError, match="myproj"):
-            ws.load(tmp_path / "b.hcl")
+            ws.load(hcl.load(tmp_path / "b.hcl"))
 
     def test_load_blueprint_only_file(self, tmp_path):
         _write_hcl(
@@ -216,7 +203,7 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         assert len(ws) == 0  # no projects
         assert len(ws._pending_blueprints) == 1
 
@@ -230,122 +217,9 @@ class TestWorkspaceLoad:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         assert "blueprints=1" in repr(ws)
         assert "projects=1" in repr(ws)
-
-
-class TestWorkspaceScan:
-    def test_scan_finds_hcl_files(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "a.hcl",
-            """
-            project "alpha" { description = "a" }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "b.hcl",
-            """
-            project "beta" { description = "b" }
-        """,
-        )
-        ws = Workspace()
-        ws.scan(tmp_path)
-        assert "alpha" in ws
-        assert "beta" in ws
-
-    def test_scan_accepts_string_path(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "myproj" { description = "test" }
-        """,
-        )
-        ws = Workspace()
-        ws.scan(str(tmp_path))
-        assert "myproj" in ws
-
-    def test_scan_recurse_true(self, tmp_path):
-        sub = tmp_path / "subdir"
-        sub.mkdir()
-        _write_hcl(
-            tmp_path,
-            "top.hcl",
-            """
-            project "top" { description = "top" }
-        """,
-        )
-        (sub / "nested.hcl").write_text("""
-            project "nested" { description = "nested" }
-        """)
-        ws = Workspace()
-        ws.scan(tmp_path, recurse=True)
-        assert "top" in ws
-        assert "nested" in ws
-
-    def test_scan_recurse_false(self, tmp_path):
-        sub = tmp_path / "subdir"
-        sub.mkdir()
-        _write_hcl(
-            tmp_path,
-            "top.hcl",
-            """
-            project "top" { description = "top" }
-        """,
-        )
-        (sub / "nested.hcl").write_text("""
-            project "nested" { description = "nested" }
-        """)
-        ws = Workspace()
-        ws.scan(tmp_path, recurse=False)
-        assert "top" in ws
-        assert "nested" not in ws
-
-    def test_scan_sorted_order(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "z.hcl",
-            """
-            project "zulu" { description = "z" }
-        """,
-        )
-        _write_hcl(
-            tmp_path,
-            "a.hcl",
-            """
-            project "alpha" { description = "a" }
-        """,
-        )
-        ws = Workspace()
-        ws.scan(tmp_path)
-        # Both loaded successfully (sorted processing means deterministic)
-        assert len(ws) == 2
-
-    def test_scan_empty_dir(self, tmp_path):
-        ws = Workspace()
-        ws.scan(tmp_path)
-        assert len(ws) == 0
-
-    def test_scan_missing_dir(self, tmp_path):
-        ws = Workspace()
-        ws.scan(tmp_path / "nonexistent")
-        assert len(ws) == 0
-
-    def test_scan_ignores_non_hcl_files(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "myproj" { description = "test" }
-        """,
-        )
-        (tmp_path / "readme.txt").write_text("not hcl")
-        ws = Workspace()
-        ws.scan(tmp_path)
-        assert len(ws) == 1
 
 
 class TestWorkspaceMapping:
@@ -361,7 +235,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         names = sorted(p.name for p in ws.values())
         assert names == ["a", "b"]
 
@@ -374,7 +248,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         pairs = list(ws.items())
         assert len(pairs) == 1
         assert pairs[0][0] == "a"
@@ -390,7 +264,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         assert sorted(ws.keys()) == ["a", "b"]
 
     def test_fresh_resolution_each_access(self, tmp_path):
@@ -402,7 +276,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         proj1 = ws["a"]
         proj2 = ws["a"]
         # Fresh resolution means different object instances
@@ -420,7 +294,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         result = ws.filter(["a", "c"])
         assert len(result) == 2
         assert result[0].name == "a"
@@ -435,7 +309,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         result = ws.filter(["a", "missing"])
         assert len(result) == 1
 
@@ -448,7 +322,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         assert ws.filter([]) == []
 
     def test_custom_project_type(self, tmp_path):
@@ -465,60 +339,7 @@ class TestWorkspaceMapping:
         """,
         )
         ws = Workspace(project_type=Custom)
-        ws.load(tmp_path / "test.hcl")
+        ws.load(hcl.load(tmp_path / "test.hcl"))
         proj = ws["myproj"]
         assert isinstance(proj, Custom)
         assert proj.repo == "owner/repo"
-
-
-class TestWorkspaceContext:
-    def test_workspace_stores_context(self):
-        ctx = {"greeting": "hello"}
-        ws = Workspace(context=ctx)
-        assert ws._context is ctx
-
-    def test_workspace_default_context_is_none(self):
-        ws = Workspace()
-        assert ws._context is None
-
-    def test_load_renders_jinja2_with_context(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "p" {
-                description = "{{ greeting }}"
-            }
-        """,
-        )
-        ws = Workspace(context={"greeting": "hello"})
-        ws.load(tmp_path / "test.hcl")
-        assert ws["p"].description == "hello"
-
-    def test_load_without_context_no_rendering(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "p" {
-                description = "plain"
-            }
-        """,
-        )
-        ws = Workspace()
-        ws.load(tmp_path / "test.hcl")
-        assert ws["p"].description == "plain"
-
-    def test_scan_renders_jinja2_with_context(self, tmp_path):
-        _write_hcl(
-            tmp_path,
-            "test.hcl",
-            """
-            project "p" {
-                description = "{{ greeting }}"
-            }
-        """,
-        )
-        ws = Workspace(context={"greeting": "hello"})
-        ws.scan(tmp_path)
-        assert ws["p"].description == "hello"

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spectrik import Blueprint, Context, Ensure, Project, Specification, Workspace
+import spectrik.hcl as hcl
+from spectrik import Blueprint, Context, Ensure, Project, Specification
 from spectrik.spec import _spec_registry
 
 
@@ -72,8 +73,7 @@ class TestEndToEnd:
         """,
         )
 
-        ws = Workspace(project_type=AppProject)
-        ws.scan(tmp_path)
+        ws = hcl.scan(tmp_path, project_type=AppProject)
 
         proj = ws["myapp"]
         assert proj.repo == "owner/myapp"
@@ -96,16 +96,13 @@ class TestEndToEnd:
         """,
         )
 
-        ws = Workspace(project_type=AppProject)
-        ws.scan(tmp_path)
+        ws = hcl.scan(tmp_path, project_type=AppProject)
 
         ws["myapp"].build(dry_run=True)
         assert CountingSpec.apply_count == 0
 
     def test_hcl_scan_convenience(self, tmp_path):
         """Test hcl.scan() convenience function."""
-        import spectrik.hcl as hcl
-
         _write_hcl(
             tmp_path,
             "config.hcl",
@@ -145,8 +142,6 @@ class TestEndToEnd:
             {% endfor %}
         """,
         )
-
-        import spectrik.hcl as hcl
 
         ws = hcl.scan(
             tmp_path,
