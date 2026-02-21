@@ -9,4 +9,8 @@ from .specop import Absent as Absent
 from .specop import Ensure as Ensure
 from .specop import Present as Present
 from .specop import SpecOp as SpecOp
+from .workspace import BlueprintRef as BlueprintRef
+from .workspace import OperationRef as OperationRef
+from .workspace import ProjectRef as ProjectRef
 from .workspace import Workspace as Workspace
+from .workspace import WorkspaceRef as WorkspaceRef
