@@ -107,9 +107,8 @@ values contain template syntax meant for other tools:
 | `$${name}`              | Literal `${name}`              |
 | `$${{ secrets.TOKEN }}` | Literal `${{ secrets.TOKEN }}` |
 
-In **heredoc strings** (`<<-EOF`), `${{ }}` patterns pass through without
-escaping because they are not valid interpolation syntax. This makes
-heredocs ideal for embedding content like GitHub Actions workflows:
+For example, to embed a GitHub Actions workflow that mixes spectrik
+variables with Actions expressions:
 
 ```hcl
 blueprint "deploy" {
@@ -125,15 +124,15 @@ blueprint "deploy" {
               - uses: actions/checkout@v4
               - run: echo "Deploying ${app_name}"
                 env:
-                  TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TOKEN: $${{ secrets.GITHUB_TOKEN }}
         EOF
     }
 }
 ```
 
 In this example, `${app_name}` is resolved by spectrik while
-`${{ secrets.GITHUB_TOKEN }}` passes through unchanged for GitHub Actions.
-In quoted strings, use `$${{ }}` instead to achieve the same result.
+`$${{ secrets.GITHUB_TOKEN }}` produces the literal `${{ secrets.GITHUB_TOKEN }}`
+that GitHub Actions expects.
 
 ## License
 
