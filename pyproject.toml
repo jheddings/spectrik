@@ -3,7 +3,7 @@ name = "spectrik"
 version = "0.3.1"
 description = "A specification and blueprint manager for declarative configuration-as-code tools."
 authors = [{ name = "jheddings", email = "jheddings@gmail.com" }]
-requires-python = ">=3.12"
+requires-python = ">=3.14.3"
 readme = "README.md"
 license = "MIT"
 dependencies = [
