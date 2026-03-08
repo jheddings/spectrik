@@ -83,19 +83,23 @@ def _extract_variables(
     """
     resolved: dict[str, Any] = {}
 
+    def _resolve_single(raw: Any) -> Any:
+        """Resolve a single value using the current context + resolved vars."""
+        # resolve() expects a dict; wrap/unwrap to resolve a single value
+        resolver = Resolver({**context, "var": resolved})
+        return resolver.resolve({"_": raw})["_"]
+
     for block in data.pop("variable", []):
         for name, body in block.items():
             if "value" not in body:
                 raise ValueError(f"variable '{name}' is missing a 'value' attribute")
-            resolver = Resolver({**context, "var": resolved})
-            value = resolver.resolve({"_": body["value"]})["_"]
-            resolved[name] = value
+            resolved[name] = _resolve_single(body["value"])
+            logger.debug("Resolved variable '%s'", name)
 
     for block in data.pop("variables", []):
         for name, value in block.items():
-            resolver = Resolver({**context, "var": resolved})
-            resolved_value = resolver.resolve({"_": value})["_"]
-            resolved[name] = resolved_value
+            resolved[name] = _resolve_single(value)
+            logger.debug("Resolved variable '%s'", name)
 
     return resolved
 
@@ -176,6 +180,10 @@ def load(
         raise ValueError(f"{file}: {exc}") from exc
 
     if variables:
+        if "var" in base_context:
+            logger.warning(
+                "context key 'var' is reserved for HCL variables and will be overwritten"
+            )
         full_context = {**base_context, "var": variables}
     else:
         full_context = base_context
