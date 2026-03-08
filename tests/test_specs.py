@@ -43,6 +43,19 @@ class NeverEqual(Specification["FakeProject"]):
         self._removed = True
 
 
+class IrreversibleSpec(Specification["FakeProject"]):
+    """A spec that does not implement remove()."""
+
+    def equals(self, ctx: Context[FakeProject]) -> bool:
+        return False
+
+    def exists(self, ctx: Context[FakeProject]) -> bool:
+        return True
+
+    def apply(self, ctx: Context[FakeProject]) -> None:
+        self._applied = True
+
+
 class ExistsButNotEqual(Specification["FakeProject"]):
     """Resource exists but is out of date."""
 
@@ -77,6 +90,19 @@ class TestSpecification:
         ctx = _make_ctx()
         assert s.exists(ctx) is True
         assert s.equals(ctx) is False
+
+    def test_remove_defaults_to_not_implemented(self):
+        s = IrreversibleSpec()
+        ctx = _make_ctx()
+        import pytest
+
+        with pytest.raises(NotImplementedError, match="does not support removal"):
+            s.remove(ctx)
+
+    def test_remove_is_not_abstract(self):
+        """Specs without remove() can be instantiated."""
+        s = IrreversibleSpec()
+        assert s is not None
 
 
 # -- Present tests --
@@ -153,6 +179,15 @@ class TestAbsent:
         ctx = _make_ctx(dry_run=True)
         op(ctx)
         assert not hasattr(s, "_removed")
+
+    def test_raises_when_remove_not_implemented(self):
+        import pytest
+
+        s = IrreversibleSpec()
+        op = Absent(s)
+        ctx = _make_ctx()
+        with pytest.raises(NotImplementedError, match="does not support removal"):
+            op(ctx)
 
 
 # -- Logging tests --

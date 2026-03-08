@@ -34,6 +34,10 @@ class Specification[P](ABC):
     def apply(self, ctx: Context[P]) -> None:
         """Create or update resource."""
 
-    @abstractmethod
     def remove(self, ctx: Context[P]) -> None:
-        """Delete resource."""
+        """Delete resource.
+
+        Override in subclasses that support removal.  The default raises
+        ``NotImplementedError`` for specs representing irreversible resources.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support removal")
