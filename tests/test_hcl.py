@@ -250,6 +250,53 @@ class TestScan:
         ws = scan(tmp_path)
         assert len(ws["myproj"].blueprints) == 1
 
+    def test_scan_with_variables(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "greeting" {
+                value = "hello"
+            }
+
+            project "app" {
+                description = "${var.greeting}"
+            }
+        """,
+        )
+        ws = scan(tmp_path)
+        assert ws["app"].description == "hello"
+
+    def test_scan_variables_are_per_file(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "a.hcl",
+            """
+            variable "name" {
+                value = "from-a"
+            }
+
+            project "a" {
+                description = "${var.name}"
+            }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            ".",
+            "b.hcl",
+            """
+            project "b" {
+                description = "no-vars"
+            }
+        """,
+        )
+        ws = scan(tmp_path)
+        assert ws["a"].description == "from-a"
+        assert ws["b"].description == "no-vars"
+
 
 # -- parse() tests --
 
