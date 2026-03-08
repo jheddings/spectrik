@@ -69,6 +69,37 @@ def _parse_project(name: str, data: dict[str, Any]) -> ProjectRef:
     )
 
 
+def _extract_variables(
+    data: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract and resolve variable/variables blocks from parsed HCL data.
+
+    Processes ``variable`` blocks first (in order), then ``variables``
+    blocks.  Within each block, values are resolved against the Python
+    *context* plus any previously resolved variables (under ``var``).
+
+    Resolved entries are removed from *data* (mutates in place).
+    """
+    resolved: dict[str, Any] = {}
+
+    for block in data.pop("variable", []):
+        for name, body in block.items():
+            if "value" not in body:
+                raise ValueError(f"variable '{name}' is missing a 'value' attribute")
+            resolver = Resolver({**context, "var": resolved})
+            value = resolver.resolve({"_": body["value"]})["_"]
+            resolved[name] = value
+
+    for block in data.pop("variables", []):
+        for name, value in block.items():
+            resolver = Resolver({**context, "var": resolved})
+            resolved_value = resolver.resolve({"_": value})["_"]
+            resolved[name] = resolved_value
+
+    return resolved
+
+
 def parse(
     file: Path,
     *,
@@ -137,8 +168,20 @@ def load(
         logger.error("Could not load file: %s", file, exc_info=exc)
         raise ValueError(f"{file}: {exc}") from exc
 
-    if context:
-        resolver = Resolver(context)
+    base_context = context or {}
+
+    try:
+        variables = _extract_variables(data, base_context)
+    except ValueError as exc:
+        raise ValueError(f"{file}: {exc}") from exc
+
+    if variables:
+        full_context = {**base_context, "var": variables}
+    else:
+        full_context = base_context
+
+    if full_context:
+        resolver = Resolver(full_context)
         try:
             data = resolver.resolve(data)
         except ValueError as exc:

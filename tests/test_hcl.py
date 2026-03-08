@@ -339,7 +339,7 @@ class TestParse:
             ".",
             "test.hcl",
             """
-            variable "x" {
+            unknown_block "x" {
                 default = "y"
             }
         """,
@@ -534,3 +534,26 @@ class TestInterpolation:
         assert proj["token"] == "${{ secrets.GITHUB_TOKEN }}"
         assert proj["repo"] == "${{ github.repository }}"
         assert proj["name"] == "myapp"
+
+
+class TestVariables:
+    """Test variable and variables block support in HCL files."""
+
+    def test_single_variable_block(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "token" {
+                value = "secret-123"
+            }
+
+            project "app" {
+                description = "${var.token}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "secret-123"
+        assert "variable" not in result
