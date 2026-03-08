@@ -250,6 +250,53 @@ class TestScan:
         ws = scan(tmp_path)
         assert len(ws["myproj"].blueprints) == 1
 
+    def test_scan_with_variables(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "greeting" {
+                value = "hello"
+            }
+
+            project "app" {
+                description = "${var.greeting}"
+            }
+        """,
+        )
+        ws = scan(tmp_path)
+        assert ws["app"].description == "hello"
+
+    def test_scan_variables_are_per_file(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "a.hcl",
+            """
+            variable "name" {
+                value = "from-a"
+            }
+
+            project "a" {
+                description = "${var.name}"
+            }
+        """,
+        )
+        _write_hcl(
+            tmp_path,
+            ".",
+            "b.hcl",
+            """
+            project "b" {
+                description = "no-vars"
+            }
+        """,
+        )
+        ws = scan(tmp_path)
+        assert ws["a"].description == "from-a"
+        assert ws["b"].description == "no-vars"
+
 
 # -- parse() tests --
 
@@ -339,7 +386,7 @@ class TestParse:
             ".",
             "test.hcl",
             """
-            variable "x" {
+            unknown_block "x" {
                 default = "y"
             }
         """,
@@ -534,3 +581,218 @@ class TestInterpolation:
         assert proj["token"] == "${{ secrets.GITHUB_TOKEN }}"
         assert proj["repo"] == "${{ github.repository }}"
         assert proj["name"] == "myapp"
+
+
+class TestVariables:
+    """Test variable and variables block support in HCL files."""
+
+    def test_single_variable_block(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "token" {
+                value = "secret-123"
+            }
+
+            project "app" {
+                description = "${var.token}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "secret-123"
+        assert "variable" not in result
+
+    def test_variables_block(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variables {
+                project_id = "proj-123"
+                service_id = "svc-456"
+            }
+
+            project "app" {
+                description = "${var.project_id}/${var.service_id}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        proj = result["project"][0]["app"]
+        assert proj["description"] == "proj-123/svc-456"
+        assert "variables" not in result
+
+    def test_variable_references_previous_variable(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "base" {
+                value = "/opt/app"
+            }
+
+            variable "config" {
+                value = "${var.base}/config"
+            }
+
+            project "app" {
+                description = "${var.config}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "/opt/app/config"
+
+    def test_variables_block_keys_reference_earlier_keys(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variables {
+                base = "/opt/app"
+                config = "${var.base}/config"
+                data = "${var.base}/data"
+            }
+
+            project "app" {
+                description = "${var.config}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "/opt/app/config"
+
+    def test_variable_references_python_context(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "home_dir" {
+                value = "${env.HOME}"
+            }
+
+            project "app" {
+                description = "${var.home_dir}/.config"
+            }
+        """,
+        )
+        result = load(
+            tmp_path / "test.hcl",
+            context={"env": {"HOME": "/home/user"}},
+        )
+        assert result["project"][0]["app"]["description"] == "/home/user/.config"
+
+    def test_variable_and_python_context_coexist(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "app_name" {
+                value = "myapp"
+            }
+
+            project "app" {
+                description = "${env.HOME}/${var.app_name}"
+            }
+        """,
+        )
+        result = load(
+            tmp_path / "test.hcl",
+            context={"env": {"HOME": "/home/user"}},
+        )
+        assert result["project"][0]["app"]["description"] == "/home/user/myapp"
+
+    def test_variable_missing_value_raises(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "bad" {
+                default = "oops"
+            }
+        """,
+        )
+        with pytest.raises(ValueError, match="missing a 'value'"):
+            load(tmp_path / "test.hcl")
+
+    def test_variable_forward_reference_raises(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "first" {
+                value = "${var.second}"
+            }
+
+            variable "second" {
+                value = "hello"
+            }
+        """,
+        )
+        with pytest.raises(ValueError, match="undefined variable"):
+            load(tmp_path / "test.hcl")
+
+    def test_no_variables_unchanged_behavior(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "app" {
+                description = "plain"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "plain"
+
+    def test_variables_without_context(self, tmp_path):
+        """Variables work even when no Python context is provided."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "name" {
+                value = "myapp"
+            }
+
+            project "app" {
+                description = "${var.name}"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["project"][0]["app"]["description"] == "myapp"
+
+    def test_variable_type_preservation(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            variable "count" {
+                value = 42
+            }
+
+            variable "tags" {
+                value = ["a", "b"]
+            }
+
+            project "app" {
+                description = "test"
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert "variable" not in result

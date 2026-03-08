@@ -1,0 +1,101 @@
+---
+name: Bug Report
+description: >-
+  Report a bug or unexpected behavior in spectrik
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for taking the time to report this bug!
+        Please fill out the sections below to help us
+        understand and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: >-
+        Provide a clear and concise description
+        of what the bug is.
+      placeholder: >
+        Example: When I call hcl.scan() with a
+        variables block, the resolver fails to
+        interpolate dotted paths.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: >-
+        Tell us how to reproduce this issue.
+        Be as specific as possible.
+      placeholder: |
+        1. Create a spec with `@spectrik.spec("example")`
+        2. Write an HCL file with `ensure "example" { }`
+        3. Call `hcl.scan("path/to/files")`
+        4. Observe the error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: >-
+        Describe what you expected to happen instead.
+      placeholder: >
+        Example: I expected the spec to be resolved
+        and the workspace to contain a project with
+        the applied spec.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or Terminal Output
+      description: >-
+        Paste relevant log excerpts or terminal
+        output.
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: Help us understand your setup.
+      placeholder: |
+        - OS: [e.g., macOS 15, Ubuntu 24.04]
+        - Python version: [e.g., 3.12.4]
+        - spectrik version: [pip show spectrik]
+      value: |
+        - OS:
+        - Python version:
+        - spectrik version:
+
+  - type: dropdown
+    id: occurrence
+    attributes:
+      label: How often does this happen?
+      options:
+        - Every time
+        - Sometimes
+        - Only happened once
+        - Not sure
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: >
+        Add any other context about the problem
+        here. For example, when did you first notice
+        this issue? Are there any workarounds? Were
+        there any recent version upgrades?
+      placeholder: >-
+        Any additional information that might
+        help us fix this bug.

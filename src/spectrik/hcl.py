@@ -69,6 +69,41 @@ def _parse_project(name: str, data: dict[str, Any]) -> ProjectRef:
     )
 
 
+def _extract_variables(
+    data: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract and resolve variable/variables blocks from parsed HCL data.
+
+    Processes ``variable`` blocks first (in order), then ``variables``
+    blocks.  Within each block, values are resolved against the Python
+    *context* plus any previously resolved variables (under ``var``).
+
+    Resolved entries are removed from *data* (mutates in place).
+    """
+    resolved: dict[str, Any] = {}
+
+    def _resolve_single(raw: Any) -> Any:
+        """Resolve a single value using the current context + resolved vars."""
+        # resolve() expects a dict; wrap/unwrap to resolve a single value
+        resolver = Resolver({**context, "var": resolved})
+        return resolver.resolve({"_": raw})["_"]
+
+    for block in data.pop("variable", []):
+        for name, body in block.items():
+            if "value" not in body:
+                raise ValueError(f"variable '{name}' is missing a 'value' attribute")
+            resolved[name] = _resolve_single(body["value"])
+            logger.debug("Resolved variable '%s'", name)
+
+    for block in data.pop("variables", []):
+        for name, value in block.items():
+            resolved[name] = _resolve_single(value)
+            logger.debug("Resolved variable '%s'", name)
+
+    return resolved
+
+
 def parse(
     file: Path,
     *,
@@ -137,8 +172,24 @@ def load(
         logger.error("Could not load file: %s", file, exc_info=exc)
         raise ValueError(f"{file}: {exc}") from exc
 
-    if context:
-        resolver = Resolver(context)
+    base_context = context or {}
+
+    try:
+        variables = _extract_variables(data, base_context)
+    except ValueError as exc:
+        raise ValueError(f"{file}: {exc}") from exc
+
+    if variables:
+        if "var" in base_context:
+            logger.warning(
+                "context key 'var' is reserved for HCL variables and will be overwritten"
+            )
+        full_context = {**base_context, "var": variables}
+    else:
+        full_context = base_context
+
+    if full_context:
+        resolver = Resolver(full_context)
         try:
             data = resolver.resolve(data)
         except ValueError as exc:
