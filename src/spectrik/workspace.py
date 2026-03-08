@@ -183,6 +183,12 @@ class Workspace[P: Project](Mapping[str, P]):
         """Return projects matching the given names, preserving input order."""
         return [self._project_refs[n].resolve(self) for n in names if n in self._project_refs]  # type: ignore[misc]
 
+    def select(self, names: Iterable[str] | None = None) -> list[P]:
+        """Return filtered projects if *names* is given, otherwise all projects."""
+        if names:
+            return self.filter(names)
+        return list(self.values())
+
     def __repr__(self) -> str:
         type_name = self._project_type.__name__
         bp_count = len(self._blueprint_refs)

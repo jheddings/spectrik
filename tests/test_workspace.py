@@ -209,6 +209,42 @@ class TestWorkspaceMapping:
         ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
         assert ws.filter([]) == []
 
+    def test_select_with_names(self):
+        ws = Workspace()
+        ws.add(
+            ProjectRef(name="a", use=[], ops=[], description="alpha"),
+            ProjectRef(name="b", use=[], ops=[], description="beta"),
+            ProjectRef(name="c", use=[], ops=[], description="gamma"),
+        )
+        result = ws.select(["a", "c"])
+        assert len(result) == 2
+        assert result[0].name == "a"
+        assert result[1].name == "c"
+
+    def test_select_without_names(self):
+        ws = Workspace()
+        ws.add(
+            ProjectRef(name="a", use=[], ops=[], description="alpha"),
+            ProjectRef(name="b", use=[], ops=[], description="beta"),
+        )
+        result = ws.select()
+        assert len(result) == 2
+
+    def test_select_with_none(self):
+        ws = Workspace()
+        ws.add(
+            ProjectRef(name="a", use=[], ops=[], description="alpha"),
+            ProjectRef(name="b", use=[], ops=[], description="beta"),
+        )
+        result = ws.select(None)
+        assert len(result) == 2
+
+    def test_select_with_empty_list(self):
+        ws = Workspace()
+        ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
+        result = ws.select([])
+        assert len(result) == 1
+
     def test_custom_project_type(self):
         class Custom(Project):
             repo: str = ""
