@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from spectrik.context import Context
+from spectrik.event import Event
 
 
 class FakeProject(BaseModel):
@@ -31,3 +32,27 @@ class TestContext:
         proj = FakeProject(name="custom")
         ctx: Context[FakeProject] = Context(target=proj)
         assert ctx.target.name == "custom"
+
+    def test_has_on_spec_start(self):
+        ctx = Context(target=FakeProject())
+        assert isinstance(ctx.on_spec_start, Event)
+
+    def test_has_on_spec_finish(self):
+        ctx = Context(target=FakeProject())
+        assert isinstance(ctx.on_spec_finish, Event)
+
+    def test_has_on_spec_applied(self):
+        ctx = Context(target=FakeProject())
+        assert isinstance(ctx.on_spec_applied, Event)
+
+    def test_has_on_spec_removed(self):
+        ctx = Context(target=FakeProject())
+        assert isinstance(ctx.on_spec_removed, Event)
+
+    def test_has_on_spec_skipped(self):
+        ctx = Context(target=FakeProject())
+        assert isinstance(ctx.on_spec_skipped, Event)
+
+    def test_has_on_spec_failed(self):
+        ctx = Context(target=FakeProject())
+        assert isinstance(ctx.on_spec_failed, Event)
