@@ -1,5 +1,9 @@
 """Tests for spectrik.event."""
 
+from __future__ import annotations
+
+import pytest
+
 from spectrik.event import Event
 
 
@@ -41,3 +45,12 @@ class TestEvent:
     def test_repr(self):
         event = Event()
         assert "Event" in repr(event)
+
+    def test_remove_missing_handler_raises(self):
+        event = Event()
+        with pytest.raises(ValueError):
+            event -= lambda: None
+
+    def test_call_empty_event_is_noop(self):
+        event = Event()
+        event()  # should not raise
