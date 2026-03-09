@@ -190,6 +190,181 @@ class TestAbsent:
             op(ctx)
 
 
+# -- FailingSpec for event tests --
+
+
+class ExistsButFailsRemove(Specification["FakeProject"]):
+    """A spec that exists but raises on remove."""
+
+    def equals(self, ctx: Context[FakeProject]) -> bool:
+        return False
+
+    def exists(self, ctx: Context[FakeProject]) -> bool:
+        return True
+
+    def apply(self, ctx: Context[FakeProject]) -> None:
+        pass
+
+    def remove(self, ctx: Context[FakeProject]) -> None:
+        raise RuntimeError("remove boom")
+
+
+class FailingSpec(Specification["FakeProject"]):
+    """A spec that raises on apply."""
+
+    def equals(self, ctx: Context[FakeProject]) -> bool:
+        return False
+
+    def exists(self, ctx: Context[FakeProject]) -> bool:
+        return False
+
+    def apply(self, ctx: Context[FakeProject]) -> None:
+        raise RuntimeError("boom")
+
+    def remove(self, ctx: Context[FakeProject]) -> None:
+        raise RuntimeError("boom")
+
+
+# -- SpecOp event tests --
+
+
+class TestSpecOpEvents:
+    def test_present_fires_start_and_finish(self):
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_start += lambda c, op: events.append("start")
+        ctx.on_spec_finish += lambda c, op: events.append("finish")
+        op = Present(AlwaysEqual())
+        op(ctx)
+        assert events == ["start", "finish"]
+
+    def test_present_fires_applied(self):
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_applied += lambda c, op: events.append("applied")
+        op = Present(NeverEqual())
+        op(ctx)
+        assert events == ["applied"]
+
+    def test_present_fires_skipped_when_exists(self):
+        reasons = []
+        ctx = _make_ctx()
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Present(AlwaysEqual())
+        op(ctx)
+        assert reasons == ["already exists"]
+
+    def test_present_fires_skipped_on_dry_run(self):
+        reasons = []
+        ctx = _make_ctx(dry_run=True)
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Present(NeverEqual())
+        op(ctx)
+        assert reasons == ["dry run; would apply"]
+
+    def test_ensure_fires_applied(self):
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_applied += lambda c, op: events.append("applied")
+        op = Ensure(ExistsButNotEqual())
+        op(ctx)
+        assert events == ["applied"]
+
+    def test_ensure_fires_skipped_when_equal(self):
+        reasons = []
+        ctx = _make_ctx()
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Ensure(AlwaysEqual())
+        op(ctx)
+        assert reasons == ["up to date"]
+
+    def test_ensure_fires_skipped_on_dry_run(self):
+        reasons = []
+        ctx = _make_ctx(dry_run=True)
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Ensure(ExistsButNotEqual())
+        op(ctx)
+        assert reasons == ["dry run; would apply"]
+
+    def test_absent_fires_removed(self):
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_removed += lambda c, op: events.append("removed")
+        op = Absent(ExistsButNotEqual())
+        op(ctx)
+        assert events == ["removed"]
+
+    def test_absent_fires_skipped_when_not_exists(self):
+        reasons = []
+        ctx = _make_ctx()
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Absent(NeverEqual())
+        op(ctx)
+        assert reasons == ["not present"]
+
+    def test_absent_fires_skipped_on_dry_run(self):
+        reasons = []
+        ctx = _make_ctx(dry_run=True)
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Absent(ExistsButNotEqual())
+        op(ctx)
+        assert reasons == ["dry run; would remove"]
+
+    def test_failed_event_fires_and_reraises(self):
+        import pytest
+
+        errors = []
+        ctx = _make_ctx()
+        ctx.on_spec_failed += lambda c, op, err: errors.append(str(err))
+        op = Present(FailingSpec())
+        with pytest.raises(RuntimeError, match="boom"):
+            op(ctx)
+        assert errors == ["boom"]
+
+    def test_finish_fires_even_on_failure(self):
+        import pytest
+
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_finish += lambda c, op: events.append("finish")
+        op = Present(FailingSpec())
+        with pytest.raises(RuntimeError):
+            op(ctx)
+        assert events == ["finish"]
+
+    def test_ensure_failed_event_fires_and_reraises(self):
+        import pytest
+
+        errors = []
+        ctx = _make_ctx()
+        ctx.on_spec_failed += lambda c, op, err: errors.append(str(err))
+        op = Ensure(FailingSpec())
+        with pytest.raises(RuntimeError, match="boom"):
+            op(ctx)
+        assert errors == ["boom"]
+
+    def test_absent_failed_event_fires_and_reraises(self):
+        import pytest
+
+        errors = []
+        ctx = _make_ctx()
+        ctx.on_spec_failed += lambda c, op, err: errors.append(str(err))
+        op = Absent(ExistsButFailsRemove())
+        with pytest.raises(RuntimeError, match="remove boom"):
+            op(ctx)
+        assert errors == ["remove boom"]
+
+    def test_full_event_sequence(self):
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_start += lambda c, op: events.append("start")
+        ctx.on_spec_applied += lambda c, op: events.append("applied")
+        ctx.on_spec_finish += lambda c, op: events.append("finish")
+        op = Ensure(ExistsButNotEqual())
+        op(ctx)
+        assert events == ["start", "applied", "finish"]
+
+
 # -- Logging tests --
 
 
