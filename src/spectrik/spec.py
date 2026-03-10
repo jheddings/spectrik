@@ -22,13 +22,25 @@ def spec(name: str):
 class Specification[P](ABC):
     """Base class for all configuration specs."""
 
-    @abstractmethod
     def equals(self, ctx: Context[P]) -> bool:
-        """Current state matches desired state."""
+        """Current state matches desired state.
+
+        Override in subclasses that can check equality.  The default
+        returns ``NotImplemented``, signaling that equality cannot be
+        determined (e.g. for sensitive values like secrets).
+        """
+        return NotImplemented  # type: ignore[return-value]
 
     def exists(self, ctx: Context[P]) -> bool:
-        """Resource exists (defaults to equals)."""
-        return self.equals(ctx)
+        """Resource exists (defaults to equals).
+
+        When ``equals()`` returns ``NotImplemented``, this falls back
+        to ``False`` (existence unknown → assume absent).
+        """
+        result = self.equals(ctx)
+        if result is NotImplemented:
+            return False
+        return result
 
     @abstractmethod
     def apply(self, ctx: Context[P]) -> None:
