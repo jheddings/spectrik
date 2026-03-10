@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from spectrik.context import Context
-from spectrik.projects import Project
+from spectrik.projects import Project, _project_registry, project
 from spectrik.spec import Specification, _spec_registry
 from spectrik.workspace import BlueprintRef, OperationRef, ProjectRef, Workspace
 
@@ -82,6 +82,14 @@ def _clean_registry():
     yield
     _spec_registry.clear()
     _spec_registry.update(saved)
+
+
+@pytest.fixture(autouse=True)
+def _clean_project_registry():
+    saved = _project_registry.copy()
+    yield
+    _project_registry.clear()
+    _project_registry.update(saved)
 
 
 class TestWorkspaceAdd:
@@ -246,12 +254,53 @@ class TestWorkspaceMapping:
         assert len(result) == 1
 
     def test_custom_project_type(self):
+        @project("custom_repo")
         class Custom(Project):
             repo: str = ""
 
-        ws = Workspace(project_type=Custom)
-        ref = ProjectRef(name="myproj", use=[], ops=[], attrs={"repo": "owner/repo"})
+        ws = Workspace()
+        ref = ProjectRef(
+            name="myproj",
+            type_name="custom_repo",
+            use=[],
+            ops=[],
+            attrs={"repo": "owner/repo"},
+        )
         ws.add(ref)
         proj = ws["myproj"]
         assert isinstance(proj, Custom)
         assert proj.repo == "owner/repo"
+
+
+class TestProjectRefTypeName:
+    def test_resolve_uses_registry_type(self):
+        @project("custom")
+        class CustomProject(Project):
+            token: str = ""
+
+        ws = Workspace()
+        ref = ProjectRef(
+            name="myproj",
+            type_name="custom",
+            use=[],
+            ops=[],
+            attrs={"token": "abc"},
+        )
+        ws.add(ref)
+        proj = ws["myproj"]
+        assert isinstance(proj, CustomProject)
+        assert proj.token == "abc"
+
+    def test_resolve_default_project_type(self):
+        ws = Workspace()
+        ref = ProjectRef(name="myproj", type_name="project", use=[], ops=[])
+        ws.add(ref)
+        proj = ws["myproj"]
+        assert isinstance(proj, Project)
+
+    def test_resolve_unknown_type_raises(self):
+        ws = Workspace()
+        ref = ProjectRef(name="myproj", type_name="unknown", use=[], ops=[])
+        ws.add(ref)
+        with pytest.raises(ValueError, match="Unknown project type"):
+            ws["myproj"]

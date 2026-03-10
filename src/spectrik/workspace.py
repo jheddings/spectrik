@@ -93,10 +93,21 @@ class ProjectRef(WorkspaceRef):
 
     use: list[str]
     ops: list[OperationRef]
+    type_name: str = "project"
     description: str = ""
     attrs: dict[str, Any] = field(default_factory=dict)
 
     def resolve(self, workspace: Workspace) -> Project:
+        from .projects import _project_registry
+
+        if self.type_name not in _project_registry:
+            raise ValueError(
+                f"Unknown project type: '{self.type_name}'"
+                " — ensure the module registering this project type is imported"
+            )
+
+        project_cls = _project_registry[self.type_name]
+
         blueprints: list[Blueprint] = []
 
         for bp_name in self.use:
@@ -107,7 +118,7 @@ class ProjectRef(WorkspaceRef):
         if inline_ops:
             blueprints.append(Blueprint(name=f"{self.name}:inline", ops=inline_ops))
 
-        return workspace.project_type(
+        return project_cls(
             name=self.name,
             description=self.description,
             blueprints=blueprints,
