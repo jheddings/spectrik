@@ -8,30 +8,25 @@ import pytest
 
 from spectrik.context import Context
 from spectrik.hcl import load, parse, scan
-from spectrik.projects import Project
+from spectrik.projects import Project, _project_registry, project
 from spectrik.spec import Specification, _spec_registry
 from spectrik.workspace import BlueprintRef, ProjectRef, Workspace
 
 # -- Test fixtures --
 
 
-class SampleProject(Project):
-    repo: str = ""
-    homepage: str = ""
-
-
-class TrackingSpec(Specification["SampleProject"]):
+class TrackingSpec(Specification["Project"]):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.applied = False
 
-    def equals(self, ctx: Context[SampleProject]) -> bool:
+    def equals(self, ctx: Context[Project]) -> bool:
         return False
 
-    def apply(self, ctx: Context[SampleProject]) -> None:
+    def apply(self, ctx: Context[Project]) -> None:
         self.applied = True
 
-    def remove(self, ctx: Context[SampleProject]) -> None:
+    def remove(self, ctx: Context[Project]) -> None:
         pass
 
 
@@ -56,6 +51,14 @@ def _clean_registry():
 
     _spec_registry.clear()
     _spec_registry.update(saved)
+
+
+@pytest.fixture(autouse=True)
+def _clean_project_registry():
+    saved = _project_registry.copy()
+    yield
+    _project_registry.clear()
+    _project_registry.update(saved)
 
 
 # -- Low-level API tests --
@@ -153,18 +156,23 @@ class TestScan:
         assert "myproj" in ws
 
     def test_scan_with_custom_project_type(self, tmp_path):
+        @project("sample")
+        class SampleProject(Project):
+            repo: str = ""
+            homepage: str = ""
+
         _write_hcl(
             tmp_path,
             ".",
             "test.hcl",
             """
-            project "myproj" {
+            sample "myproj" {
                 repo = "owner/repo"
                 homepage = "https://example.com"
             }
         """,
         )
-        ws = scan(tmp_path, project_type=SampleProject)
+        ws = scan(tmp_path)
         proj = ws["myproj"]
         assert isinstance(proj, SampleProject)
         assert proj.repo == "owner/repo"
@@ -796,3 +804,70 @@ class TestVariables:
         )
         result = load(tmp_path / "test.hcl")
         assert "variable" not in result
+
+
+# -- Registered project type parsing tests --
+
+
+class TestParseRegisteredTypes:
+    def test_parse_registered_project_type(self, tmp_path):
+        @project("railway")
+        class RailwayProject(Project):
+            token: str = ""
+
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            railway "alpha" {
+                token = "abc"
+                ensure "widget" { color = "red" }
+            }
+            """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert isinstance(ref, ProjectRef)
+        assert ref.name == "alpha"
+        assert ref.type_name == "railway"
+        assert ref.attrs == {"token": "abc"}
+
+    def test_parse_mixed_types(self, tmp_path):
+        @project("railway")
+        class RailwayProject(Project):
+            token: str = ""
+
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            project "simple" {
+                description = "basic"
+            }
+            railway "alpha" {
+                token = "abc"
+            }
+            """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        proj_refs = [r for r in refs if isinstance(r, ProjectRef)]
+        assert len(proj_refs) == 2
+        types = {r.type_name for r in proj_refs}
+        assert types == {"project", "railway"}
+
+    def test_parse_unregistered_block_raises(self, tmp_path):
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            unknown_thing "x" {
+                value = "y"
+            }
+            """,
+        )
+        with pytest.raises(ValueError, match="Unsupported block type"):
+            parse(tmp_path / "test.hcl")
