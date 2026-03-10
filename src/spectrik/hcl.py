@@ -33,37 +33,57 @@ def _iter_blocks(
         yield from block.items()
 
 
-def _parse_op(strategy: str, spec_name: str, attrs: dict[str, Any]) -> OperationRef:
+def _parse_op(
+    strategy: str,
+    spec_name: str,
+    attrs: dict[str, Any],
+    *,
+    source: Path | None = None,
+) -> OperationRef:
     """Create a single OperationRef from HCL strategy block data."""
-    return OperationRef(name=spec_name, strategy=strategy, attrs=dict(attrs))
+    return OperationRef(name=spec_name, strategy=strategy, attrs=dict(attrs), source=source)
 
 
-def _parse_ops(block_data: dict[str, Any]) -> list[OperationRef]:
+def _parse_ops(
+    block_data: dict[str, Any],
+    *,
+    source: Path | None = None,
+) -> list[OperationRef]:
     """Translate HCL strategy blocks into OperationRefs."""
     return [
-        _parse_op(strategy, spec_name, attrs)
+        _parse_op(strategy, spec_name, attrs, source=source)
         for strategy in _STRATEGY_NAMES
         for spec_name, attrs in _iter_blocks(block_data, strategy)
     ]
 
 
-def _parse_blueprint(name: str, data: dict[str, Any]) -> BlueprintRef:
+def _parse_blueprint(
+    name: str,
+    data: dict[str, Any],
+    *,
+    source: Path | None = None,
+) -> BlueprintRef:
     """Translate an HCL blueprint block into a BlueprintRef."""
     return BlueprintRef(
         name=name,
         includes=data.get("include", []),
-        ops=_parse_ops(data),
+        ops=_parse_ops(data, source=source),
         description=data.get("description", ""),
     )
 
 
-def _parse_project(name: str, data: dict[str, Any]) -> ProjectRef:
+def _parse_project(
+    name: str,
+    data: dict[str, Any],
+    *,
+    source: Path | None = None,
+) -> ProjectRef:
     """Translate an HCL project block into a ProjectRef."""
     skip_keys = {"use", "include", "description"} | _STRATEGY_NAMES
     return ProjectRef(
         name=name,
         use=data.get("use", []),
-        ops=_parse_ops(data),
+        ops=_parse_ops(data, source=source),
         description=data.get("description", ""),
         attrs={k: v for k, v in data.items() if k not in skip_keys},
     )
@@ -117,12 +137,12 @@ def parse(
         match block_type:
             case "blueprint":
                 refs.extend(
-                    _parse_blueprint(name, block_data)
+                    _parse_blueprint(name, block_data, source=file)
                     for name, block_data in _iter_blocks(data, block_type)
                 )
             case "project":
                 refs.extend(
-                    _parse_project(name, block_data)
+                    _parse_project(name, block_data, source=file)
                     for name, block_data in _iter_blocks(data, block_type)
                 )
             case _:

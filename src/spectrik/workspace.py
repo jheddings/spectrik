@@ -6,6 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Self, overload
 
 from .blueprints import Blueprint
@@ -40,10 +41,15 @@ class OperationRef(WorkspaceRef):
     strategy: str
     attrs: dict[str, Any]
     label: str | None = None
+    source: Path | None = None
 
     def resolve(self, workspace: Workspace) -> SpecOp:
         if self.name not in _spec_registry:
-            raise ValueError(f"Unknown spec type: '{self.name}'")
+            msg = f"Unknown spec type: '{self.name}'"
+            if self.source is not None:
+                msg += f" in {self.source}"
+            msg += " — ensure the module registering this spec is imported"
+            raise ValueError(msg)
         if self.strategy not in _STRATEGY_MAP:
             raise ValueError(f"Unknown strategy: '{self.strategy}'")
         spec_cls = _spec_registry[self.name]
