@@ -58,7 +58,7 @@ class RailwayProject(Project):
 - `ProjectRef` gains a `type_name: str` field to carry the registered name
   through to resolution
 - `blueprint` remains a reserved block type, handled separately
-- Unrecognized top-level block types are ignored (or warned), consistent
+- Unrecognized top-level block types raise `ValueError`, consistent
   with current behavior for non-`project`/`blueprint` blocks
 
 ### Lazy Resolution
