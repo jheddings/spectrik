@@ -9,6 +9,17 @@ from spectrik.spec import Specification
 from spectrik.specop import Ensure
 
 
+class FailingSpec(Specification["Project"]):
+    def equals(self, ctx: Context[Project]) -> bool:
+        return False
+
+    def apply(self, ctx: Context[Project]) -> None:
+        raise RuntimeError("boom")
+
+    def remove(self, ctx: Context[Project]) -> None:
+        pass
+
+
 class TrackingSpec(Specification["Project"]):
     def __init__(self):
         self.applied = False
@@ -87,3 +98,28 @@ class TestProject:
         ctx = Context(target=proj, dry_run=True)
         proj.build(ctx=ctx)
         assert s.applied is False
+
+    def test_build_returns_true(self):
+        s = TrackingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = Project(name="test-proj", blueprints=[bp])
+        result = proj.build()
+        assert result is True
+
+    def test_build_continue_on_error(self):
+        s1 = FailingSpec()
+        s2 = TrackingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s1), Ensure(s2)])
+        proj = Project(name="test-proj", blueprints=[bp])
+        result = proj.build(continue_on_error=True)
+        assert result is False
+        assert s2.applied is True
+
+    def test_build_raises_on_error_by_default(self):
+        import pytest
+
+        s = FailingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = Project(name="test-proj", blueprints=[bp])
+        with pytest.raises(RuntimeError, match="boom"):
+            proj.build()

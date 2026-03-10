@@ -56,3 +56,11 @@ class TestContext:
     def test_has_on_spec_failed(self):
         ctx = Context(target=FakeProject())
         assert isinstance(ctx.on_spec_failed, Event)
+
+    def test_continue_on_error_defaults_false(self):
+        ctx = Context(target=FakeProject())
+        assert ctx.continue_on_error is False
+
+    def test_continue_on_error_explicit_true(self):
+        ctx = Context(target=FakeProject(), continue_on_error=True)
+        assert ctx.continue_on_error is True
