@@ -25,8 +25,15 @@ class Blueprint(BaseModel):
     def __iter__(self) -> Iterator[SpecOp[Any]]:
         return iter(self.ops)
 
-    def build(self, ctx: Context) -> None:
+    def build(self, ctx: Context) -> bool:
         """Execute all operations in this blueprint."""
         logger.debug("Building blueprint '%s'", self.name)
+        success = True
         for op in self.ops:
-            op(ctx)
+            try:
+                op(ctx)
+            except Exception:
+                if not ctx.continue_on_error:
+                    raise
+                success = False
+        return success

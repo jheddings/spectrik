@@ -14,6 +14,17 @@ class FakeProject(BaseModel):
     name: str = "test"
 
 
+class FailingSpec(Specification["FakeProject"]):
+    def equals(self, ctx: Context[FakeProject]) -> bool:
+        return False
+
+    def apply(self, ctx: Context[FakeProject]) -> None:
+        raise RuntimeError("boom")
+
+    def remove(self, ctx: Context[FakeProject]) -> None:
+        pass
+
+
 class TrackingSpec(Specification["FakeProject"]):
     def __init__(self):
         self.applied = False
@@ -63,3 +74,28 @@ class TestBlueprint:
         ctx = _make_ctx(dry_run=True)
         bp.build(ctx)
         assert s.applied is False
+
+    def test_build_returns_true_on_success(self):
+        s = TrackingSpec()
+        bp = Blueprint(name="test-bp", ops=[Ensure(s)])
+        ctx = _make_ctx()
+        result = bp.build(ctx)
+        assert result is True
+
+    def test_build_continue_on_error(self):
+        s1 = FailingSpec()
+        s2 = TrackingSpec()
+        bp = Blueprint(name="test-bp", ops=[Ensure(s1), Ensure(s2)])
+        ctx = _make_ctx(continue_on_error=True)
+        result = bp.build(ctx)
+        assert result is False
+        assert s2.applied is True
+
+    def test_build_raises_on_error_by_default(self):
+        import pytest
+
+        s = FailingSpec()
+        bp = Blueprint(name="test-bp", ops=[Ensure(s)])
+        ctx = _make_ctx()
+        with pytest.raises(RuntimeError, match="boom"):
+            bp.build(ctx)
