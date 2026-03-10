@@ -63,7 +63,22 @@ class TestOperationRef:
     def test_resolve_unknown_spec_raises(self):
         ref = OperationRef(name="nonexistent", strategy="ensure", attrs={})
         ws = Workspace()
-        with pytest.raises(ValueError, match="Unknown spec type"):
+        with pytest.raises(ValueError, match="Unknown spec type: 'nonexistent'"):
+            ref.resolve(ws)
+
+    def test_resolve_unknown_spec_includes_source(self):
+        from pathlib import Path
+
+        source = Path("/tmp/test-config.hcl")
+        ref = OperationRef(name="nonexistent", strategy="ensure", attrs={}, source=source)
+        ws = Workspace()
+        with pytest.raises(ValueError, match="in /tmp/test-config.hcl"):
+            ref.resolve(ws)
+
+    def test_resolve_unknown_spec_suggests_import(self):
+        ref = OperationRef(name="nonexistent", strategy="ensure", attrs={})
+        ws = Workspace()
+        with pytest.raises(ValueError, match="ensure the module registering this spec is imported"):
             ref.resolve(ws)
 
     def test_resolve_unknown_strategy_raises(self):
