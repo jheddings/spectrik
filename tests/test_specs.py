@@ -43,6 +43,16 @@ class NeverEqual(Specification["FakeProject"]):
         self._removed = True
 
 
+class SensitiveSpec(Specification["FakeProject"]):
+    """A spec that cannot check equality (e.g. secrets)."""
+
+    def apply(self, ctx: Context[FakeProject]) -> None:
+        self._applied = True
+
+    def remove(self, ctx: Context[FakeProject]) -> None:
+        self._removed = True
+
+
 class IrreversibleSpec(Specification["FakeProject"]):
     """A spec that does not implement remove()."""
 
@@ -80,10 +90,20 @@ def _make_ctx(dry_run: bool = False) -> Context[FakeProject]:
 
 
 class TestSpecification:
+    def test_equals_defaults_to_not_implemented(self):
+        s = SensitiveSpec()
+        ctx = _make_ctx()
+        assert s.equals(ctx) is NotImplemented
+
     def test_exists_defaults_to_equals(self):
         s = AlwaysEqual()
         ctx = _make_ctx()
         assert s.exists(ctx) is True
+
+    def test_exists_falls_back_when_equals_not_implemented(self):
+        s = SensitiveSpec()
+        ctx = _make_ctx()
+        assert s.exists(ctx) is False
 
     def test_exists_overridable(self):
         s = ExistsButNotEqual()
@@ -146,6 +166,20 @@ class TestEnsure:
         ctx = _make_ctx()
         op(ctx)
         assert s._applied is True
+
+    def test_applies_when_equals_not_implemented(self):
+        s = SensitiveSpec()
+        op = Ensure(s)
+        ctx = _make_ctx()
+        op(ctx)
+        assert s._applied is True
+
+    def test_dry_run_skips_when_equals_not_implemented(self):
+        s = SensitiveSpec()
+        op = Ensure(s)
+        ctx = _make_ctx(dry_run=True)
+        op(ctx)
+        assert not hasattr(s, "_applied")
 
     def test_dry_run_skips_apply(self):
         s = ExistsButNotEqual()
@@ -278,6 +312,22 @@ class TestSpecOpEvents:
         op(ctx)
         assert reasons == ["up to date"]
 
+    def test_ensure_fires_applied_when_equals_not_implemented(self):
+        events = []
+        ctx = _make_ctx()
+        ctx.on_spec_applied += lambda c, op: events.append("applied")
+        op = Ensure(SensitiveSpec())
+        op(ctx)
+        assert events == ["applied"]
+
+    def test_ensure_fires_skipped_on_dry_run_when_equals_not_implemented(self):
+        reasons = []
+        ctx = _make_ctx(dry_run=True)
+        ctx.on_spec_skipped += lambda c, op, reason: reasons.append(reason)
+        op = Ensure(SensitiveSpec())
+        op(ctx)
+        assert reasons == ["dry run; would apply (equality unknown)"]
+
     def test_ensure_fires_skipped_on_dry_run(self):
         reasons = []
         ctx = _make_ctx(dry_run=True)
@@ -396,6 +446,13 @@ class TestSpecOpLogging:
         with caplog.at_level(logging.INFO, logger="spectrik.specop"):
             op(_make_ctx(dry_run=True))
         assert "DRY RUN" in caplog.text
+
+    def test_ensure_logs_equality_unknown(self, caplog):
+        s = SensitiveSpec()
+        op = Ensure(s)
+        with caplog.at_level(logging.INFO, logger="spectrik.specop"):
+            op(_make_ctx())
+        assert "equality unknown" in caplog.text
 
     def test_ensure_logs_dry_run(self, caplog):
         s = ExistsButNotEqual()

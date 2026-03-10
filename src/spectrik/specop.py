@@ -52,7 +52,16 @@ class Ensure[P](SpecOp[P]):
         spec_name = type(self.spec).__name__
         try:
             ctx.on_spec_start(ctx, self)
-            if self.spec.equals(ctx):
+            result = self.spec.equals(ctx)
+            if result is NotImplemented:
+                if ctx.dry_run:
+                    logger.info("[DRY RUN] Would apply %s; equality unknown", spec_name)
+                    ctx.on_spec_skipped(ctx, self, "dry run; would apply (equality unknown)")
+                else:
+                    logger.info("Applying %s; equality unknown", spec_name)
+                    self.spec.apply(ctx)
+                    ctx.on_spec_applied(ctx, self)
+            elif result:
                 logger.debug("Skipping %s; up to date", spec_name)
                 ctx.on_spec_skipped(ctx, self, "up to date")
             elif ctx.dry_run:
