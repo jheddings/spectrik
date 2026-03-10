@@ -6,7 +6,14 @@ import pytest
 
 from spectrik.blueprints import Blueprint
 from spectrik.context import Context
-from spectrik.projects import Project, _project_registry, project
+from spectrik.projects import (
+    Project,
+    _collect_hooks,
+    _project_registry,
+    post_build,
+    pre_build,
+    project,
+)
 from spectrik.spec import Specification
 from spectrik.specop import Ensure
 
@@ -165,3 +172,188 @@ class TestProjectDecorator:
             @project("dupe")
             class Second(Project):
                 pass
+
+
+class TestLifecycleHooks:
+    def test_pre_build_decorator_marks_method(self):
+        class MyProject(Project):
+            @pre_build
+            def setup(self, ctx):
+                pass
+
+        assert getattr(MyProject.setup, "_spectrik_hook", None) == "pre_build"
+
+    def test_post_build_decorator_marks_method(self):
+        class MyProject(Project):
+            @post_build
+            def teardown(self, ctx):
+                pass
+
+        assert getattr(MyProject.teardown, "_spectrik_hook", None) == "post_build"
+
+    def test_collect_hooks_finds_pre_build(self):
+        class MyProject(Project):
+            @pre_build
+            def setup(self, ctx):
+                pass
+
+        proj = MyProject(name="test")
+        hooks = _collect_hooks(proj, "pre_build")
+        assert len(hooks) == 1
+
+    def test_collect_hooks_empty_when_none(self):
+        proj = Project(name="test")
+        hooks = _collect_hooks(proj, "pre_build")
+        assert hooks == []
+
+    def test_collect_hooks_mro_order(self):
+        """Base class hooks run before subclass hooks."""
+        order = []
+
+        class Base(Project):
+            @pre_build
+            def base_setup(self, ctx):
+                order.append("base")
+
+        class Child(Base):
+            @pre_build
+            def child_setup(self, ctx):
+                order.append("child")
+
+        proj = Child(name="test")
+        hooks = _collect_hooks(proj, "pre_build")
+        for h in hooks:
+            h(None)
+        assert order == ["base", "child"]
+
+    def test_pre_build_runs_before_specs(self):
+        order = []
+
+        class HookedProject(Project):
+            @pre_build
+            def setup(self, ctx):
+                order.append("pre_build")
+
+        class OrderSpec(Specification["HookedProject"]):
+            def equals(self, ctx):
+                return False
+
+            def apply(self, ctx):
+                order.append("spec")
+
+            def remove(self, ctx):
+                pass
+
+        s = OrderSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = HookedProject(name="test", blueprints=[bp])
+        proj.build()
+        assert order == ["pre_build", "spec"]
+
+    def test_post_build_runs_after_specs(self):
+        order = []
+
+        class HookedProject(Project):
+            @post_build
+            def teardown(self, ctx):
+                order.append("post_build")
+
+        class OrderSpec(Specification["HookedProject"]):
+            def equals(self, ctx):
+                return False
+
+            def apply(self, ctx):
+                order.append("spec")
+
+            def remove(self, ctx):
+                pass
+
+        s = OrderSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = HookedProject(name="test", blueprints=[bp])
+        proj.build()
+        assert order == ["spec", "post_build"]
+
+    def test_pre_build_receives_context(self):
+        received = {}
+
+        class HookedProject(Project):
+            @pre_build
+            def setup(self, ctx):
+                received["ctx"] = ctx
+                received["target"] = ctx.target
+
+        proj = HookedProject(name="test")
+        proj.build()
+        assert received["target"] is proj
+        assert isinstance(received["ctx"], Context)
+
+    def test_pre_build_raising_aborts_build(self):
+        class HookedProject(Project):
+            @pre_build
+            def setup(self, ctx):
+                raise RuntimeError("setup failed")
+
+        s = TrackingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = HookedProject(name="test", blueprints=[bp])
+        with pytest.raises(RuntimeError, match="setup failed"):
+            proj.build()
+        assert s.applied is False
+
+    def test_post_build_runs_on_pre_build_failure(self):
+        cleaned_up = []
+
+        class HookedProject(Project):
+            @pre_build
+            def setup(self, ctx):
+                raise RuntimeError("setup failed")
+
+            @post_build
+            def teardown(self, ctx):
+                cleaned_up.append(True)
+
+        proj = HookedProject(name="test")
+        with pytest.raises(RuntimeError, match="setup failed"):
+            proj.build()
+        assert cleaned_up == [True]
+
+    def test_post_build_runs_on_spec_failure(self):
+        cleaned_up = []
+
+        class HookedProject(Project):
+            @post_build
+            def teardown(self, ctx):
+                cleaned_up.append(True)
+
+        s = FailingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = HookedProject(name="test", blueprints=[bp])
+        with pytest.raises(RuntimeError, match="boom"):
+            proj.build()
+        assert cleaned_up == [True]
+
+    def test_multiple_pre_build_hooks(self):
+        order = []
+
+        class HookedProject(Project):
+            @pre_build
+            def first(self, ctx):
+                order.append("first")
+
+            @pre_build
+            def second(self, ctx):
+                order.append("second")
+
+        proj = HookedProject(name="test")
+        proj.build()
+        assert order == ["first", "second"]
+
+    def test_no_hooks_build_unchanged(self):
+        """Projects without hooks work exactly as before."""
+        s = TrackingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = Project(name="test", blueprints=[bp])
+        result = proj.build()
+        assert result is True
+        assert s.applied is True
