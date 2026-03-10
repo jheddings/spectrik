@@ -21,7 +21,7 @@ class Project(BaseModel):
     description: str = ""
     blueprints: list[Blueprint] = Field(default_factory=list)
 
-    def build(self, *, ctx: Context | None = None, **kwargs) -> None:
+    def build(self, *, ctx: Context | None = None, **kwargs) -> bool:
         """Build all blueprints.
 
         If *ctx* is provided it is used directly; otherwise a new
@@ -30,5 +30,5 @@ class Project(BaseModel):
         if ctx is None:
             ctx = Context(target=self, **kwargs)
         logger.info("Building project '%s'", self.name)
-        for blueprint in self.blueprints:
-            blueprint.build(ctx)
+        results = [blueprint.build(ctx) for blueprint in self.blueprints]
+        return all(results)
