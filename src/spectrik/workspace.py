@@ -93,10 +93,21 @@ class ProjectRef(WorkspaceRef):
 
     use: list[str]
     ops: list[OperationRef]
+    type_name: str = "project"
     description: str = ""
     attrs: dict[str, Any] = field(default_factory=dict)
 
     def resolve(self, workspace: Workspace) -> Project:
+        from .projects import _project_registry
+
+        if self.type_name not in _project_registry:
+            raise ValueError(
+                f"Unknown project type: '{self.type_name}'"
+                " — ensure the module registering this project type is imported"
+            )
+
+        project_cls = _project_registry[self.type_name]
+
         blueprints: list[Blueprint] = []
 
         for bp_name in self.use:
@@ -107,7 +118,7 @@ class ProjectRef(WorkspaceRef):
         if inline_ops:
             blueprints.append(Blueprint(name=f"{self.name}:inline", ops=inline_ops))
 
-        return workspace.project_type(
+        return project_cls(
             name=self.name,
             description=self.description,
             blueprints=blueprints,
@@ -115,20 +126,12 @@ class ProjectRef(WorkspaceRef):
         )
 
 
-class Workspace[P: Project](Mapping[str, P]):
-    """Configured workspace that holds typed refs and resolves projects on access."""
+class Workspace(Mapping[str, Project]):
+    """Configured workspace that holds refs and resolves projects on access."""
 
-    def __init__(
-        self,
-        project_type: type[P] = Project,  # type: ignore[assignment]
-    ) -> None:
-        self._project_type = project_type
+    def __init__(self) -> None:
         self._blueprint_refs: dict[str, BlueprintRef] = {}
         self._project_refs: dict[str, ProjectRef] = {}
-
-    @property
-    def project_type(self) -> type[P]:
-        return self._project_type
 
     @property
     def blueprints(self) -> Mapping[str, BlueprintRef]:
@@ -162,8 +165,8 @@ class Workspace[P: Project](Mapping[str, P]):
         self.add(ref)
         return self
 
-    def __getitem__(self, name: str) -> P:
-        return self._project_refs[name].resolve(self)  # type: ignore[return-value]
+    def __getitem__(self, name: str) -> Project:
+        return self._project_refs[name].resolve(self)
 
     def __contains__(self, name: object) -> bool:
         return name in self._project_refs
@@ -175,28 +178,54 @@ class Workspace[P: Project](Mapping[str, P]):
         return len(self._project_refs)
 
     @overload
-    def get(self, name: str) -> P | None: ...
+    def get(self, name: str) -> Project | None: ...
     @overload
-    def get(self, name: str, default: P) -> P: ...
+    def get(self, name: str, default: Project) -> Project: ...
     @overload
-    def get(self, name: str, default: None) -> P | None: ...
-    def get(self, name: str, default: Any = None) -> P | None:
+    def get(self, name: str, default: None) -> Project | None: ...
+    def get(self, name: str, default: Any = None) -> Project | None:
         if name not in self._project_refs:
             return default
-        return self._project_refs[name].resolve(self)  # type: ignore[return-value]
+        return self._project_refs[name].resolve(self)
 
-    def filter(self, names: Iterable[str]) -> list[P]:
+    def filter(self, names: Iterable[str]) -> list[Project]:
         """Return projects matching the given names, preserving input order."""
-        return [self._project_refs[n].resolve(self) for n in names if n in self._project_refs]  # type: ignore[misc]
+        return self.select(names=names)
 
-    def select(self, names: Iterable[str] | None = None) -> list[P]:
-        """Return filtered projects if *names* is given, otherwise all projects."""
-        if names:
-            return self.filter(names)
-        return list(self.values())
+    def select(
+        self,
+        *,
+        name: str | None = None,
+        names: Iterable[str] | None = None,
+        project_type: type[Project] | None = None,
+    ) -> list[Project]:
+        """Return projects matching the given criteria.
+
+        All filters are combined (intersection). With no filters, returns
+        all projects.
+        """
+        target_names: list[str] | None = None
+        if name is not None or names is not None:
+            merged: list[str] = []
+            if name is not None:
+                merged.append(name)
+            if names is not None:
+                merged.extend(names)
+            target_names = merged
+
+        if target_names is not None:
+            projects = [
+                self._project_refs[n].resolve(self) for n in target_names if n in self._project_refs
+            ]
+        else:
+            projects = list(self.values())
+
+        if project_type is not None:
+            projects = [p for p in projects if isinstance(p, project_type)]
+
+        return projects
 
     def __repr__(self) -> str:
-        type_name = self._project_type.__name__
         bp_count = len(self._blueprint_refs)
         proj_count = len(self._project_refs)
-        return f"Workspace(project_type={type_name}, blueprints={bp_count}, projects={proj_count})"
+        return f"Workspace(blueprints={bp_count}, projects={proj_count})"

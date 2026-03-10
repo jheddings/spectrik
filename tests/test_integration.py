@@ -6,9 +6,11 @@ from pathlib import Path
 
 import spectrik.hcl as hcl
 from spectrik import Blueprint, Context, Ensure, Project, Specification
+from spectrik.projects import _project_registry, project
 from spectrik.spec import _spec_registry
 
 
+@project("app")
 class AppProject(Project):
     repo: str = ""
 
@@ -40,13 +42,16 @@ def _write_hcl(tmp_path: Path, filename: str, content: str) -> Path:
 
 class TestEndToEnd:
     def setup_method(self):
-        self._saved = _spec_registry.copy()
+        self._saved_specs = _spec_registry.copy()
         _spec_registry.clear()
         _spec_registry["counter"] = CountingSpec
+        self._saved_projects = _project_registry.copy()
 
     def teardown_method(self):
         _spec_registry.clear()
-        _spec_registry.update(self._saved)
+        _spec_registry.update(self._saved_specs)
+        _project_registry.clear()
+        _project_registry.update(self._saved_projects)
 
     def test_full_pipeline(self, tmp_path):
         """Load HCL via Workspace, build project, verify specs executed."""
@@ -64,7 +69,7 @@ class TestEndToEnd:
             tmp_path,
             "projects.hcl",
             """
-            project "myapp" {
+            app "myapp" {
                 description = "Test app"
                 repo = "owner/myapp"
                 use = ["base"]
@@ -73,9 +78,10 @@ class TestEndToEnd:
         """,
         )
 
-        ws = hcl.scan(tmp_path, project_type=AppProject)
+        ws = hcl.scan(tmp_path)
 
         proj = ws["myapp"]
+        assert isinstance(proj, AppProject)
         assert proj.repo == "owner/myapp"
 
         proj.build()
@@ -90,13 +96,13 @@ class TestEndToEnd:
             blueprint "base" {
                 ensure "counter" { id = "1" }
             }
-            project "myapp" {
+            app "myapp" {
                 use = ["base"]
             }
         """,
         )
 
-        ws = hcl.scan(tmp_path, project_type=AppProject)
+        ws = hcl.scan(tmp_path)
 
         ws["myapp"].build(dry_run=True)
         assert CountingSpec.apply_count == 0
@@ -110,14 +116,14 @@ class TestEndToEnd:
             blueprint "base" {
                 ensure "counter" { id = "1" }
             }
-            project "myapp" {
+            app "myapp" {
                 use = ["base"]
                 repo = "owner/myapp"
             }
         """,
         )
 
-        ws = hcl.scan(tmp_path, project_type=AppProject)
+        ws = hcl.scan(tmp_path)
         proj = ws["myapp"]
         assert isinstance(proj, AppProject)
         assert proj.repo == "owner/myapp"
@@ -134,7 +140,7 @@ class TestEndToEnd:
             blueprint "base" {
                 ensure "counter" { id = "${prefix}-1" }
             }
-            project "web" {
+            app "web" {
                 description = "${env} app"
                 use = ["base"]
             }
@@ -143,7 +149,6 @@ class TestEndToEnd:
 
         ws = hcl.scan(
             tmp_path,
-            project_type=AppProject,
             context={"prefix": "prod", "env": "production"},
         )
         assert len(ws) == 1
@@ -152,6 +157,58 @@ class TestEndToEnd:
 
         ws["web"].build()
         assert CountingSpec.apply_count == 1
+
+    def test_mixed_project_types(self, tmp_path):
+        """Multiple project types coexist in one workspace."""
+
+        @project("other")
+        class OtherProject(Project):
+            endpoint: str = ""
+
+        _write_hcl(
+            tmp_path,
+            "apps.hcl",
+            """
+            app "web" {
+                repo = "owner/web"
+                ensure "counter" { id = "1" }
+            }
+            """,
+        )
+        _write_hcl(
+            tmp_path,
+            "services.hcl",
+            """
+            other "api" {
+                endpoint = "https://api.example.com"
+                ensure "counter" { id = "2" }
+            }
+            """,
+        )
+
+        ws = hcl.scan(tmp_path)
+        assert len(ws) == 2
+
+        web = ws["web"]
+        assert isinstance(web, AppProject)
+        assert web.repo == "owner/web"
+
+        api = ws["api"]
+        assert isinstance(api, OtherProject)
+        assert api.endpoint == "https://api.example.com"
+
+        # select by type
+        apps = ws.select(project_type=AppProject)
+        assert len(apps) == 1
+        assert apps[0].name == "web"
+
+        # build all — resolve first, then reset counters and build
+        all_projects = list(ws.values())
+        CountingSpec.apply_count = 0
+        CountingSpec.remove_count = 0
+        for proj in all_projects:
+            proj.build()
+        assert CountingSpec.apply_count == 2
 
     def test_programmatic_api(self):
         """Test building specs/blueprints/projects without HCL."""

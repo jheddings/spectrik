@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import pytest
+
 from spectrik.blueprints import Blueprint
 from spectrik.context import Context
-from spectrik.projects import Project
+from spectrik.projects import Project, _project_registry, project
 from spectrik.spec import Specification
 from spectrik.specop import Ensure
+
+
+@pytest.fixture(autouse=True)
+def _clean_project_registry():
+    saved = _project_registry.copy()
+    yield
+    _project_registry.clear()
+    _project_registry.update(saved)
 
 
 class FailingSpec(Specification["Project"]):
@@ -123,3 +133,35 @@ class TestProject:
         proj = Project(name="test-proj", blueprints=[bp])
         with pytest.raises(RuntimeError, match="boom"):
             proj.build()
+
+
+class TestProjectDecorator:
+    def test_base_project_registered(self):
+        assert "project" in _project_registry
+        assert _project_registry["project"] is Project
+
+    def test_register_custom_type(self):
+        @project("railway")
+        class RailwayProject(Project):
+            token: str = ""
+
+        assert "railway" in _project_registry
+        assert _project_registry["railway"] is RailwayProject
+
+    def test_decorator_returns_class_unchanged(self):
+        @project("custom")
+        class CustomProject(Project):
+            pass
+
+        assert CustomProject.__name__ == "CustomProject"
+
+    def test_duplicate_name_raises(self):
+        @project("dupe")
+        class First(Project):
+            pass
+
+        with pytest.raises(ValueError, match="dupe"):
+
+            @project("dupe")
+            class Second(Project):
+                pass

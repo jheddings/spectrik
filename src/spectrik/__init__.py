@@ -4,6 +4,7 @@ from .blueprints import Blueprint as Blueprint
 from .context import Context as Context
 from .event import Event as Event
 from .projects import Project as Project
+from .projects import project as project
 from .spec import Specification as Specification
 from .spec import spec as spec
 from .specop import Absent as Absent

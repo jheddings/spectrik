@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from spectrik.context import Context
-from spectrik.projects import Project
+from spectrik.projects import Project, _project_registry, project
 from spectrik.spec import Specification, _spec_registry
 from spectrik.specop import Absent, Ensure, Present
 from spectrik.workspace import BlueprintRef, OperationRef, ProjectRef, Workspace
@@ -27,12 +27,15 @@ class TrackingSpec(Specification["Project"]):
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
-    saved = _spec_registry.copy()
+    saved_specs = _spec_registry.copy()
     _spec_registry.clear()
     _spec_registry["widget"] = TrackingSpec
+    saved_projects = _project_registry.copy()
     yield
     _spec_registry.clear()
-    _spec_registry.update(saved)
+    _spec_registry.update(saved_specs)
+    _project_registry.clear()
+    _project_registry.update(saved_projects)
 
 
 class TestOperationRef:
@@ -187,16 +190,19 @@ class TestProjectRef:
         assert project.blueprints[0].name == "myproj:inline"
 
     def test_resolve_with_custom_project_type(self):
+        @project("custom")
         class Custom(Project):
             repo: str = ""
 
-        ws = Workspace(project_type=Custom)
-        ref = ProjectRef(name="myproj", use=[], ops=[], attrs={"repo": "owner/repo"})
+        ws = Workspace()
+        ref = ProjectRef(
+            name="myproj", type_name="custom", use=[], ops=[], attrs={"repo": "owner/repo"}
+        )
         ws.add(ref)
 
-        project = ref.resolve(ws)
-        assert isinstance(project, Custom)
-        assert project.repo == "owner/repo"
+        resolved = ref.resolve(ws)
+        assert isinstance(resolved, Custom)
+        assert resolved.repo == "owner/repo"
 
     def test_resolve_unknown_blueprint_raises(self):
         ref = ProjectRef(name="myproj", use=["missing"], ops=[])

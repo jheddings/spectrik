@@ -9,7 +9,6 @@ from typing import Any
 
 import hcl2
 
-from .projects import Project
 from .resolve import Resolver
 from .workspace import BlueprintRef, OperationRef, ProjectRef, Workspace, WorkspaceRef
 
@@ -76,12 +75,14 @@ def _parse_project(
     name: str,
     data: dict[str, Any],
     *,
+    type_name: str = "project",
     source: Path | None = None,
 ) -> ProjectRef:
     """Translate an HCL project block into a ProjectRef."""
     skip_keys = {"use", "include", "description"} | _STRATEGY_NAMES
     return ProjectRef(
         name=name,
+        type_name=type_name,
         use=data.get("use", []),
         ops=_parse_ops(data, source=source),
         description=data.get("description", ""),
@@ -130,38 +131,38 @@ def parse(
     context: dict[str, Any] | None = None,
 ) -> list[WorkspaceRef]:
     """Parse an HCL file into workspace refs."""
+    from .projects import _project_registry
+
     data = load(file, context=context)
     refs: list[WorkspaceRef] = []
 
     for block_type in data:
-        match block_type:
-            case "blueprint":
-                refs.extend(
-                    _parse_blueprint(name, block_data, source=file)
-                    for name, block_data in _iter_blocks(data, block_type)
-                )
-            case "project":
-                refs.extend(
-                    _parse_project(name, block_data, source=file)
-                    for name, block_data in _iter_blocks(data, block_type)
-                )
-            case _:
-                raise ValueError(f"Unsupported block type: '{block_type}'")
+        if block_type == "blueprint":
+            refs.extend(
+                _parse_blueprint(name, block_data, source=file)
+                for name, block_data in _iter_blocks(data, block_type)
+            )
+        elif block_type in _project_registry:
+            refs.extend(
+                _parse_project(name, block_data, type_name=block_type, source=file)
+                for name, block_data in _iter_blocks(data, block_type)
+            )
+        else:
+            raise ValueError(f"Unsupported block type: '{block_type}'")
 
     return refs
 
 
-def scan[P: Project](
+def scan(
     path: str | Path,
     *,
-    project_type: type[P] = Project,  # type: ignore[assignment]
     recurse: bool = True,
     context: dict[str, Any] | None = None,
-) -> Workspace[P]:
+) -> Workspace:
     """Scan a directory for .hcl files and return a ready Workspace."""
 
     directory = Path(path)
-    ws: Workspace[P] = Workspace(project_type=project_type)
+    ws = Workspace()
 
     if not directory.is_dir():
         logger.warning("Directory '%s' does not exist; skipping scan", directory)
