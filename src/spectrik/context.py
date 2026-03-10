@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .event import Event
+
 
 class Context[P]:
     """Runtime state passed through the build chain."""
@@ -9,3 +11,10 @@ class Context[P]:
     def __init__(self, target: P, *, dry_run: bool = False) -> None:
         self.target = target
         self.dry_run = dry_run
+
+        self.on_spec_start = Event()
+        self.on_spec_finish = Event()
+        self.on_spec_applied = Event()
+        self.on_spec_removed = Event()
+        self.on_spec_skipped = Event()
+        self.on_spec_failed = Event()

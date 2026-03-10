@@ -68,3 +68,22 @@ class TestProject:
         proj.build()
         assert isinstance(s.received_project, CustomProject)
         assert s.received_project.custom_field == "hello"
+
+    def test_build_with_ctx(self):
+        events = []
+        s = TrackingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = Project(name="test-proj", blueprints=[bp])
+        ctx = Context(target=proj)
+        ctx.on_spec_applied += lambda c, op: events.append("applied")
+        proj.build(ctx=ctx)
+        assert s.applied is True
+        assert events == ["applied"]
+
+    def test_build_with_ctx_preserves_dry_run(self):
+        s = TrackingSpec()
+        bp = Blueprint(name="bp", ops=[Ensure(s)])
+        proj = Project(name="test-proj", blueprints=[bp])
+        ctx = Context(target=proj, dry_run=True)
+        proj.build(ctx=ctx)
+        assert s.applied is False

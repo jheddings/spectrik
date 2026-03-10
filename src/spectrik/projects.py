@@ -21,9 +21,14 @@ class Project(BaseModel):
     description: str = ""
     blueprints: list[Blueprint] = Field(default_factory=list)
 
-    def build(self, **kwargs) -> None:
-        """Build all blueprints. kwargs are passed to Context."""
-        ctx = Context(target=self, **kwargs)
+    def build(self, *, ctx: Context | None = None, **kwargs) -> None:
+        """Build all blueprints.
+
+        If *ctx* is provided it is used directly; otherwise a new
+        :class:`Context` is created from *kwargs*.
+        """
+        if ctx is None:
+            ctx = Context(target=self, **kwargs)
         logger.info("Building project '%s'", self.name)
         for blueprint in self.blueprints:
             blueprint.build(ctx)
