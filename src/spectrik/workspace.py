@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -189,7 +190,16 @@ class Workspace(Mapping[str, Project]):
         return self._project_refs[name].resolve(self)
 
     def filter(self, names: Iterable[str]) -> list[Project]:
-        """Return projects matching the given names, preserving input order."""
+        """Return projects matching the given names, preserving input order.
+
+        .. deprecated::
+            Use :meth:`select` instead.
+        """
+        warnings.warn(
+            "filter() is deprecated, use select() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.select(names=names)
 
     def select(

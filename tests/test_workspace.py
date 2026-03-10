@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from spectrik.context import Context
@@ -183,7 +185,12 @@ class TestWorkspaceMapping:
             ProjectRef(name="b", use=[], ops=[], description="beta"),
             ProjectRef(name="c", use=[], ops=[], description="gamma"),
         )
-        result = ws.filter(["a", "c"])
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = ws.filter(["a", "c"])
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "select()" in str(w[0].message)
         assert len(result) == 2
         assert result[0].name == "a"
         assert result[1].name == "c"
@@ -191,13 +198,21 @@ class TestWorkspaceMapping:
     def test_filter_skips_missing(self):
         ws = Workspace()
         ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
-        result = ws.filter(["a", "missing"])
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = ws.filter(["a", "missing"])
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
         assert len(result) == 1
 
     def test_filter_empty_names(self):
         ws = Workspace()
         ws.add(ProjectRef(name="a", use=[], ops=[], description="alpha"))
-        assert ws.filter([]) == []
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            assert ws.filter([]) == []
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
 
     def test_select_with_names(self):
         ws = Workspace()
