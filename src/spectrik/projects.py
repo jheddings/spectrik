@@ -11,6 +11,23 @@ from .context import Context
 
 logger = logging.getLogger(__name__)
 
+_project_registry: dict[str, type[Project]] = {}
+
+
+def project(name: str):
+    """Register a Project subclass as an HCL block type."""
+
+    def decorator[T: Project](cls: type[T]) -> type[T]:
+        if name in _project_registry:
+            raise ValueError(
+                f"Duplicate project type: '{name}' is already registered "
+                f"to {_project_registry[name].__name__}"
+            )
+        _project_registry[name] = cls
+        return cls
+
+    return decorator
+
 
 class Project(BaseModel):
     """Base model that apps subclass with domain-specific fields."""
@@ -32,3 +49,7 @@ class Project(BaseModel):
         logger.info("Building project '%s'", self.name)
         results = [blueprint.build(ctx) for blueprint in self.blueprints]
         return all(results)
+
+
+# Register base Project as the "project" block type
+project("project")(Project)
