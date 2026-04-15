@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import hcl2
+from hcl2 import SerializationOptions
 
 from .resolve import Resolver
 from .workspace import BlueprintRef, OperationRef, ProjectRef, Workspace, WorkspaceRef
@@ -15,6 +16,10 @@ from .workspace import BlueprintRef, OperationRef, ProjectRef, Workspace, Worksp
 logger = logging.getLogger(__name__)
 
 _STRATEGY_NAMES = frozenset(("present", "ensure", "absent"))
+_SERIALIZATION_OPTS = SerializationOptions(
+    strip_string_quotes=True,
+    explicit_blocks=False,
+)
 
 
 def _iter_blocks(
@@ -188,7 +193,7 @@ def load(
     text = file.read_text()
 
     try:
-        data = hcl2.loads(text)  # type: ignore[reportPrivateImportUsage]
+        data = hcl2.loads(text, serialization_options=_SERIALIZATION_OPTS)
     except Exception as exc:
         logger.error("Could not load file: %s", file, exc_info=exc)
         raise ValueError(f"{file}: {exc}") from exc
