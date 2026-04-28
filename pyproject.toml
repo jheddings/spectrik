@@ -8,7 +8,7 @@ readme = "README.md"
 license = "MIT"
 dependencies = [
     "pydantic>=2.13.3",
-    "python-hcl2>=8.1.2",
+    "python-hcl2>=8.1.2,<9",
 ]
 
 [dependency-groups]

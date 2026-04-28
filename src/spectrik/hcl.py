@@ -19,6 +19,7 @@ _STRATEGY_NAMES = frozenset(("present", "ensure", "absent"))
 _SERIALIZATION_OPTS = SerializationOptions(
     strip_string_quotes=True,
     explicit_blocks=False,
+    with_comments=False,
 )
 
 
@@ -142,6 +143,8 @@ def parse(
     refs: list[WorkspaceRef] = []
 
     for block_type in data:
+        if block_type.startswith("__") and block_type.endswith("__"):
+            continue
         if block_type == "blueprint":
             refs.extend(
                 _parse_blueprint(name, block_data, source=file)
