@@ -123,6 +123,31 @@ class TestLoad:
         result = load(tmp_path / "test.hcl", context={})
         assert result["project"][0]["p"]["description"] == "plain"
 
+    def test_load_strips_comment_metadata(self, tmp_path):
+        """python-hcl2 v8 emits __comments__ keys by default; loader must drop them."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            # leading hash comment
+            // leading slash comment
+            /* block comment */
+            blueprint "base" {
+                # inside-block comment
+                ensure "widget" {
+                    color = "red"  # trailing inline
+                }
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert "__comments__" not in result
+        assert "__inline_comments__" not in result
+        for key in result:
+            assert not key.startswith("__")
+        assert "blueprint" in result
+
     def test_load_undefined_var_raises_with_filepath(self, tmp_path):
         _write_hcl(
             tmp_path,
@@ -435,6 +460,38 @@ class TestParse:
         ref = refs[0]
         assert isinstance(ref, BlueprintRef)
         assert ref.includes == ["base"]
+
+    def test_parse_with_comments(self, tmp_path):
+        """Regression for #72: HCL comments must not break parse()."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            # top-level hash comment
+            // top-level slash comment
+            /* top-level block comment */
+            blueprint "base" {
+                # comment inside blueprint
+                ensure "widget" {
+                    // comment inside operation
+                    color = "red"
+                }
+            }
+            project "myproj" {
+                # comment inside project
+                description = "A test project"  // trailing comment
+            }
+        """,
+        )
+        refs = parse(tmp_path / "test.hcl")
+        assert len(refs) == 2
+        bp_refs = [r for r in refs if isinstance(r, BlueprintRef)]
+        proj_refs = [r for r in refs if isinstance(r, ProjectRef)]
+        assert len(bp_refs) == 1
+        assert len(proj_refs) == 1
+        assert bp_refs[0].name == "base"
+        assert proj_refs[0].description == "A test project"
 
     def test_parse_multiple_strategies(self, tmp_path):
         _write_hcl(
