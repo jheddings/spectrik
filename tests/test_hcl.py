@@ -148,6 +148,59 @@ class TestLoad:
             assert not key.startswith("__")
         assert "blueprint" in result
 
+    def test_load_heredoc_returns_unwrapped_body(self, tmp_path):
+        """Heredoc values should be unwrapped to their body, not raw <<EOT...EOT tokens."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            ensure "widget" {
+                template = <<EOT
+hello world
+line2
+EOT
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["ensure"][0]["widget"]["template"] == "hello world\nline2\n"
+
+    def test_load_heredoc_indented_dedents_body(self, tmp_path):
+        """`<<-` heredocs should be dedented per the HCL spec."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            ensure "widget" {
+                template = <<-EOT
+                    hello world
+                    line2
+                EOT
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl")
+        assert result["ensure"][0]["widget"]["template"] == "hello world\nline2\n"
+
+    def test_load_heredoc_with_interpolation(self, tmp_path):
+        """Heredoc bodies should still participate in `${...}` interpolation."""
+        _write_hcl(
+            tmp_path,
+            ".",
+            "test.hcl",
+            """
+            ensure "widget" {
+                template = <<-EOT
+                    hello ${name}
+                EOT
+            }
+        """,
+        )
+        result = load(tmp_path / "test.hcl", context={"name": "world"})
+        assert result["ensure"][0]["widget"]["template"] == "hello world\n"
+
     def test_load_undefined_var_raises_with_filepath(self, tmp_path):
         _write_hcl(
             tmp_path,
