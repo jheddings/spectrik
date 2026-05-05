@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import textwrap
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,30 @@ _SERIALIZATION_OPTS = SerializationOptions(
     explicit_blocks=False,
     with_comments=False,
 )
+
+# python-hcl2 emits heredoc values as raw `<<DELIM\n...\nDELIM` tokens when
+# `preserve_heredocs` is enabled (its default). We post-process to unwrap them.
+_HEREDOC_RE = re.compile(r"\A<<(-?)([a-zA-Z][a-zA-Z0-9._-]*)\n([\s\S]*)\2\Z")
+
+
+def _unwrap_heredoc(value: str) -> str:
+    match = _HEREDOC_RE.match(value)
+    if match is None:
+        return value
+    trim, _delim, body = match.groups()
+    if trim:
+        body = textwrap.dedent(body)
+    return body
+
+
+def _unwrap_heredocs(data: Any) -> Any:
+    if isinstance(data, dict):
+        return {k: _unwrap_heredocs(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_unwrap_heredocs(v) for v in data]
+    if isinstance(data, str):
+        return _unwrap_heredoc(data)
+    return data
 
 
 def _iter_blocks(
@@ -200,6 +226,8 @@ def load(
     except Exception as exc:
         logger.error("Could not load file: %s", file, exc_info=exc)
         raise ValueError(f"{file}: {exc}") from exc
+
+    data = _unwrap_heredocs(data)
 
     base_context = context or {}
 
