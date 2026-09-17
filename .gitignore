@@ -4,21 +4,13 @@
 *~
 .DS_Store
 
-__pycache__
-*.py[cod]
 *.prof
-.coverage
-.pytest_cache
-.ruff_cache
-
-.venv
+*.test
+*.out
 
 local.env
 local.yaml
 settings.local.json
 
 dist
-lib
 tmp
-site
-htmlcov
