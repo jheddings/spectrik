@@ -62,3 +62,26 @@ func TestBuildPassesTheOuterTargetToOps(t *testing.T) {
 type opFunc func(ctx context.Context, t Target) error
 
 func (f opFunc) Run(ctx context.Context, t Target) error { return f(ctx, t) }
+
+func TestBuildContinuesAcrossBlueprintsOnError(t *testing.T) {
+	var log []string
+	errA := errors.New("a failed")
+	errC := errors.New("c failed")
+	tgt := &testProject{Project: Project{Name: "red", Blueprints: []*Blueprint{
+		{Name: "first", Ops: []Op{recordOp{label: "a", log: &log, err: errA}}},
+		{Name: "second", Ops: []Op{recordOp{label: "b", log: &log}}},
+		{Name: "third", Ops: []Op{recordOp{label: "c", log: &log, err: errC}}},
+	}}}
+
+	err := Build(WithContinueOnError(context.Background(), true), tgt)
+	if !errors.Is(err, errA) || !errors.Is(err, errC) {
+		t.Fatalf("err = %v, want both failures", err)
+	}
+	if got, want := join(log), "a,b,c"; got != want {
+		t.Fatalf("ran %s, want %s", got, want)
+	}
+	want := "project red: blueprint first: a failed\nproject red: blueprint third: c failed"
+	if got := err.Error(); got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}

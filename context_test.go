@@ -34,3 +34,16 @@ func TestDryRunInheritedByChildContext(t *testing.T) {
 		t.Fatal("child context lost the dry-run flag")
 	}
 }
+
+func TestContinueOnErrorDefaultsToFalse(t *testing.T) {
+	if ContinueOnError(context.Background()) {
+		t.Fatal("ContinueOnError = true on a bare context, want false")
+	}
+}
+
+func TestWithContinueOnErrorSetsFlag(t *testing.T) {
+	ctx := WithContinueOnError(context.Background(), true)
+	if !ContinueOnError(ctx) {
+		t.Fatal("ContinueOnError = false after WithContinueOnError(true)")
+	}
+}

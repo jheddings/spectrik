@@ -58,3 +58,35 @@ func TestBlueprintStopsAtFirstError(t *testing.T) {
 }
 
 func join(parts []string) string { return strings.Join(parts, ",") }
+
+func TestBlueprintContinuesOnErrorAndJoinsFailures(t *testing.T) {
+	var log []string
+	errTwo := errors.New("two failed")
+	errThree := errors.New("three failed")
+	bp := &Blueprint{Name: "base", Ops: []Op{
+		recordOp{label: "one", log: &log},
+		recordOp{label: "two", log: &log, err: errTwo},
+		recordOp{label: "three", log: &log, err: errThree},
+		recordOp{label: "four", log: &log},
+	}}
+
+	err := bp.Build(WithContinueOnError(context.Background(), true), newTarget())
+	if !errors.Is(err, errTwo) || !errors.Is(err, errThree) {
+		t.Fatalf("err = %v, want both failures", err)
+	}
+	if got, want := join(log), "one,two,three,four"; got != want {
+		t.Fatalf("ran %s, want %s", got, want)
+	}
+	if got, want := err.Error(), "blueprint base: two failed\nblueprint base: three failed"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestBlueprintContinueOnErrorReturnsNilWhenAllSucceed(t *testing.T) {
+	var log []string
+	bp := &Blueprint{Name: "base", Ops: []Op{recordOp{label: "one", log: &log}}}
+
+	if err := bp.Build(WithContinueOnError(context.Background(), true), newTarget()); err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+}

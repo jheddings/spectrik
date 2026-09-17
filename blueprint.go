@@ -2,6 +2,7 @@ package spectrik
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -11,13 +12,21 @@ type Blueprint struct {
 	Ops  []Op
 }
 
-// Build runs every op against the target in order, stopping at the first
-// error.
+// Build runs every op against the target in order. It stops at the first
+// error unless the context carries ContinueOnError, in which case every
+// op runs and the failures are returned joined.
 func (b *Blueprint) Build(ctx context.Context, t Target) error {
+	var errs []error
 	for _, op := range b.Ops {
-		if err := op.Run(ctx, t); err != nil {
-			return fmt.Errorf("blueprint %s: %w", b.Name, err)
+		err := op.Run(ctx, t)
+		if err == nil {
+			continue
 		}
+		err = fmt.Errorf("blueprint %s: %w", b.Name, err)
+		if !ContinueOnError(ctx) {
+			return err
+		}
+		errs = append(errs, err)
 	}
-	return nil
+	return errors.Join(errs...)
 }
