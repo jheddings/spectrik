@@ -8,8 +8,9 @@ import (
 
 // Blueprint is a named, ordered, reusable collection of operations.
 type Blueprint struct {
-	Name string
-	Ops  []Op
+	Name        string
+	Description string
+	Ops         []Op
 }
 
 // Build runs every op against the target in order. It stops at the first

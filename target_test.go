@@ -3,9 +3,11 @@ package spectrik
 import "testing"
 
 // testProject is a consumer-style project type used across the test suite.
+// Specs in loader tests append to log so a test can see what ran.
 type testProject struct {
 	Project
-	Owner string
+	Owner string `hcl:"owner,optional"`
+	log   []string
 }
 
 // otherProject is a second project type for wrong-target cases.
