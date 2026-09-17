@@ -32,6 +32,72 @@ directory of `.hcl` files, and build the projects they select.
 go get github.com/jheddings/spectrik
 ```
 
+## Quick Start
+
+Define a project type by embedding `spectrik.Project`, and a spec whose
+methods take that project type:
+
+```go
+type Machine struct {
+    spectrik.Project
+    Hostname string `hcl:"hostname,optional"`
+}
+
+type Symlink struct {
+    Link   string `hcl:"link"`
+    Target string `hcl:"target"`
+}
+
+func (s *Symlink) Equals(ctx context.Context, m *Machine) (bool, error) {
+    cur, err := os.Readlink(s.Link)
+    return err == nil && cur == s.Target, nil
+}
+
+func (s *Symlink) Apply(ctx context.Context, m *Machine) error {
+    return os.Symlink(s.Target, s.Link)
+}
+```
+
+Register both, load a directory of HCL, and build:
+
+```go
+reg := spectrik.NewRegistry()
+spectrik.RegisterProject(reg, "machine", func() *Machine { return &Machine{} })
+spectrik.RegisterSpec(reg, "symlink", func() spectrik.Spec[*Machine] { return &Symlink{} })
+
+ws, err := spectrik.Load("./hcl", spectrik.Options{
+    Registry:  reg,
+    Variables: map[string]cty.Value{"env": spectrik.EnvVars()},
+})
+
+ctx := spectrik.WithDryRun(context.Background(), dryRun)
+for _, name := range ws.Projects() {
+    proj, err := ws.Project(name)
+    err = spectrik.Build(ctx, proj)
+}
+```
+
+With HCL like:
+
+```hcl
+blueprint "dotfiles" {
+  ensure "symlink" {
+    link   = "${env.HOME}/.zshrc"
+    target = "${env.HOME}/dotfiles/zshrc"
+  }
+}
+
+machine "laptop" {
+  hostname = "laptop"
+  use      = ["dotfiles"]
+}
+```
+
+`Present`, `Ensure`, and `Absent` decide when a spec runs; `Comparer`,
+`Exister`, and `Remover` are optional interfaces a spec implements when it
+can. `WithHooks` attaches callbacks for progress output, and
+`WithContinueOnError` keeps a build going past a failing spec.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
