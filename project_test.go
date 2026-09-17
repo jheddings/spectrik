@@ -63,6 +63,83 @@ type opFunc func(ctx context.Context, t Target) error
 
 func (f opFunc) Run(ctx context.Context, t Target) error { return f(ctx, t) }
 
+// lifecycleProject implements both lifecycle interfaces and records the order.
+type lifecycleProject struct {
+	Project
+	log     *[]string
+	preErr  error
+	postErr error
+}
+
+func (p *lifecycleProject) PreBuild(ctx context.Context) error {
+	*p.log = append(*p.log, "pre")
+	return p.preErr
+}
+
+func (p *lifecycleProject) PostBuild(ctx context.Context) error {
+	*p.log = append(*p.log, "post")
+	return p.postErr
+}
+
+func newLifecycleProject(log *[]string) *lifecycleProject {
+	return &lifecycleProject{
+		Project: Project{Name: "red", Blueprints: []*Blueprint{
+			{Name: "first", Ops: []Op{recordOp{label: "a", log: log}}},
+		}},
+		log: log,
+	}
+}
+
+func TestBuildRunsPreBuildBeforeAndPostBuildAfter(t *testing.T) {
+	var log []string
+	tgt := newLifecycleProject(&log)
+
+	if err := Build(context.Background(), tgt); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := join(log), "pre,a,post"; got != want {
+		t.Fatalf("ran %s, want %s", got, want)
+	}
+}
+
+func TestBuildAbortsWhenPreBuildFails(t *testing.T) {
+	var log []string
+	errPre := errors.New("no token")
+	tgt := newLifecycleProject(&log)
+	tgt.preErr = errPre
+
+	err := Build(context.Background(), tgt)
+	if !errors.Is(err, errPre) {
+		t.Fatalf("err = %v, want %v", err, errPre)
+	}
+	if got, want := err.Error(), "project red: pre-build: no token"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	if got, want := join(log), "pre,post"; got != want {
+		t.Fatalf("ran %s, want %s (post-build runs even when pre-build fails)", got, want)
+	}
+}
+
+func TestBuildRunsPostBuildAfterFailureAndJoinsErrors(t *testing.T) {
+	var log []string
+	errPost := errors.New("cleanup failed")
+	tgt := newLifecycleProject(&log)
+	tgt.Blueprints[0].Ops[0] = recordOp{label: "a", log: &log, err: errOp}
+	tgt.postErr = errPost
+
+	err := Build(context.Background(), tgt)
+	if !errors.Is(err, errOp) || !errors.Is(err, errPost) {
+		t.Fatalf("err = %v, want both the build and post-build failures", err)
+	}
+	want := "project red: blueprint first: op failed\nproject red: post-build: cleanup failed"
+	if got := err.Error(); got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	if got, want := join(log), "pre,a,post"; got != want {
+		t.Fatalf("ran %s, want %s", got, want)
+	}
+}
+
 func TestBuildContinuesAcrossBlueprintsOnError(t *testing.T) {
 	var log []string
 	errA := errors.New("a failed")
