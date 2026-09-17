@@ -1,6 +1,10 @@
 package spectrik
 
-import "fmt"
+import (
+	"fmt"
+	"maps"
+	"slices"
+)
 
 // Strategy names how a spec is applied. The values are the HCL block types.
 type Strategy string
@@ -11,23 +15,32 @@ const (
 	StrategyAbsent  Strategy = "absent"
 )
 
-// Decoder fills a freshly constructed spec from configuration. The HCL
-// loader supplies one that decodes a block body; tests can set fields
-// directly. It receives a pointer to the spec struct.
-type Decoder func(spec any) error
+// Decoder fills a freshly constructed spec or project from configuration.
+// The HCL loader supplies one that decodes a block body; tests can set
+// fields directly. It receives a pointer to the struct.
+type Decoder func(v any) error
 
 // opFactory builds an op for a registered spec type. It closes over the
 // spec's project type, which keeps the registry itself non-generic.
 type opFactory func(strategy Strategy, decode Decoder) (Op, error)
 
-// Registry maps spec type names, as used in HCL blocks, to constructors.
+// projectFactory builds a target for a registered project type.
+type projectFactory func(decode Decoder) (Target, error)
+
+// Registry maps the names used in HCL blocks to spec and project types.
 type Registry struct {
-	specs map[string]opFactory
+	specs    map[string]opFactory
+	projects map[string]projectFactory
 }
 
-// NewRegistry returns an empty registry.
+// NewRegistry returns an empty registry. No project type is registered by
+// default; a consumer that wants plain `project` blocks registers
+// *Project under that name itself.
 func NewRegistry() *Registry {
-	return &Registry{specs: make(map[string]opFactory)}
+	return &Registry{
+		specs:    make(map[string]opFactory),
+		projects: make(map[string]projectFactory),
+	}
 }
 
 // RegisterSpec registers a constructor for the spec type name. It is a
@@ -65,4 +78,37 @@ func (r *Registry) NewOp(name string, strategy Strategy, decode Decoder) (Op, er
 		return nil, fmt.Errorf("unknown spec type %q", name)
 	}
 	return factory(strategy, decode)
+}
+
+// RegisterProject registers a constructor for the project type name, which
+// is the HCL block type consumers write to declare a project of that kind.
+// Registering a name twice panics.
+func RegisterProject[P Target](r *Registry, name string, newProject func() P) {
+	if _, dup := r.projects[name]; dup {
+		panic(fmt.Sprintf("spectrik: project type %q already registered", name))
+	}
+	r.projects[name] = func(decode Decoder) (Target, error) {
+		p := newProject()
+		if decode != nil {
+			if err := decode(p); err != nil {
+				return nil, fmt.Errorf("project type %s: %w", name, err)
+			}
+		}
+		return p, nil
+	}
+}
+
+// NewProject constructs a target of the named project type and decodes it.
+// A nil decode leaves it at its constructed defaults.
+func (r *Registry) NewProject(name string, decode Decoder) (Target, error) {
+	factory, ok := r.projects[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown project type %q", name)
+	}
+	return factory(decode)
+}
+
+// ProjectTypes returns the registered project type names, sorted.
+func (r *Registry) ProjectTypes() []string {
+	return slices.Sorted(maps.Keys(r.projects))
 }

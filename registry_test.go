@@ -114,6 +114,78 @@ func TestNewOpRejectsUnknownStrategy(t *testing.T) {
 	}
 }
 
+func TestNewProjectConstructsAndDecodes(t *testing.T) {
+	reg := NewRegistry()
+	RegisterProject(reg, "github", func() *testProject { return &testProject{} })
+
+	tgt, err := reg.NewProject("github", func(p any) error {
+		p.(*testProject).Owner = "risefamily"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := tgt.(*testProject)
+	if !ok {
+		t.Fatalf("project is %T, want *testProject", tgt)
+	}
+	if got.Owner != "risefamily" {
+		t.Fatalf("Owner = %q, want %q", got.Owner, "risefamily")
+	}
+}
+
+func TestNewProjectReturnsDecodeError(t *testing.T) {
+	reg := NewRegistry()
+	RegisterProject(reg, "github", func() *testProject { return &testProject{} })
+	errDecode := errors.New("bad attribute")
+
+	_, err := reg.NewProject("github", func(any) error { return errDecode })
+	if !errors.Is(err, errDecode) {
+		t.Fatalf("err = %v, want %v", err, errDecode)
+	}
+	if got, want := err.Error(), "project type github: bad attribute"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestNewProjectRejectsUnknownType(t *testing.T) {
+	reg := NewRegistry()
+
+	_, err := reg.NewProject("railway", nil)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), `unknown project type "railway"`) {
+		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestProjectTypesAreSorted(t *testing.T) {
+	reg := NewRegistry()
+	RegisterProject(reg, "railway", func() *otherProject { return &otherProject{} })
+	RegisterProject(reg, "github", func() *testProject { return &testProject{} })
+
+	if got, want := join(reg.ProjectTypes()), "github,railway"; got != want {
+		t.Fatalf("ProjectTypes = %s, want %s", got, want)
+	}
+}
+
+func TestRegisterProjectPanicsOnDuplicate(t *testing.T) {
+	reg := NewRegistry()
+	RegisterProject(reg, "github", func() *testProject { return &testProject{} })
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic")
+		}
+		if msg, _ := r.(string); !strings.Contains(msg, `project type "github" already registered`) {
+			t.Fatalf("panic = %v", r)
+		}
+	}()
+	RegisterProject(reg, "github", func() *testProject { return &testProject{} })
+}
+
 func TestRegisterSpecPanicsOnDuplicate(t *testing.T) {
 	reg := newTestRegistry()
 
