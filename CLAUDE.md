@@ -23,7 +23,6 @@ The port's rationale, prior art, and open design decisions are in
 - **No breaking changes without consideration.** This is a published
   library with downstream consumers. Changing the public API surface
   requires careful thought.
-- **No private repo references** — this is a public project.
 - **No secrets in code** — tokens, keys, and credentials stay in GitHub
   Secrets or local env files (which are gitignored).
 - **Do not create tags manually.** Always use `just release`.
