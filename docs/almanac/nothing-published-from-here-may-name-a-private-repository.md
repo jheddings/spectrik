@@ -20,6 +20,14 @@ a convention, or a technique from somewhere private, attribute it to the decisio
 substance transfers; the provenance does not. An entry's `source:` field is the easiest
 place to get this wrong, because citing an origin is exactly what the field asks for.
 
+**Assume private until you have checked, and do not keep a list.** Visibility is not
+guessable from a repository's name, its owner, or where it sits on disk.
+`gh repo view <owner>/<name> --json visibility` settles it in a second, and a repository
+that 404s is either private or deleted — both unnameable. Resist writing down which
+repositories are private: such a list is stale the moment another one is created, and it
+invites the inverse error of treating anything absent from it as safe to name. Check the
+repository in front of you instead.
+
 **Why:** the failure is silent and close to irreversible. No hook checks this, so
 nothing fails and the push succeeds. Merges to `main` are squashed, so a leaked name in
 a commit body or PR title cannot be removed afterwards without a history rewrite, and a
