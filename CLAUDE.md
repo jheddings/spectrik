@@ -17,15 +17,12 @@ The port's rationale, prior art, and open design decisions are in
 
 ## Guardrails
 
-- **NEVER commit or push to `main` directly.** Always work in a feature
-  branch or worktree. Use `just preflight` before pushing.
 - **Do not skip pre-commit hooks** (`--no-verify`) unless explicitly asked.
 - **No breaking changes without consideration.** This is a published
   library with downstream consumers. Changing the public API surface
   requires careful thought.
 - **No secrets in code** — tokens, keys, and credentials stay in GitHub
   Secrets or local env files (which are gitignored).
-- **Do not create tags manually.** Always use `just release`.
 
 ## Architecture
 
@@ -42,8 +39,9 @@ its predecessor `go-spec`. One concern per file, with a matching
 - **Project** — top-level build target that composes blueprints by `use`.
   Consumers embed it in their own struct to add fields.
 - **Context** — runtime state (target, dry-run, hooks) passed to specs.
-- **Registry** — maps HCL block names to spec and project types. Explicit
-  type with a package-level default; no `init()`-only global state.
+- **Registry** — maps HCL block names to spec and project types. A
+  `*Registry` value passed explicitly to `RegisterSpec` / `RegisterProject`;
+  no default registry, and no project type registered by default.
 - **HCL loading** — built on `hashicorp/hcl/v2` and `gohcl`. Blocks decode
   straight into typed structs; `${...}` is real HCL expression evaluation.
 
@@ -52,29 +50,12 @@ the ADR. Settle it there first, then implement.
 
 ## Conventions
 
-Commit format, branch naming, and markdown wrapping are recorded in
-`docs/almanac/` — one entry each, and those entries are the only copy. See
-`AGENTS.md` for how to use the almanac.
+This repository's conventions — commits, branches, markdown, worktrees,
+releases, testing, tooling — are recorded in `docs/almanac/`, one entry
+each, and those entries are the only copy. `ls docs/almanac/` is the
+index; see `AGENTS.md` for how to use it.
 
 ## Development
-
-### Workflow
-
-Use `just` recipes — do not run tools directly:
-
-- `just preflight` — full validation gate (format, vet, tests)
-- `just tidy` — auto-format and tidy modules
-- `just test` — unit tests with the race detector
-
-### Testing
-
-Follow TDD: write failing tests first, then implement.
-
-- Tests live beside the code they cover (`foo.go` / `foo_test.go`)
-- Prefer table-driven tests and the standard `testing` package
-- Registries are values, not globals: construct one per test rather than
-  saving and restoring package state
-- HCL fixtures go under `testdata/`
 
 ### Code Style
 
@@ -86,6 +67,7 @@ Follow TDD: write failing tests first, then implement.
 
 ### Release Process
 
-1. `just release (major|minor|patch)` — runs preflight, tags, and pushes
-2. GitHub Actions creates a draft release
-3. Human publishes the release
+Cutting a release is `just release (major|minor|patch)`; see
+`docs/almanac/` for the rule and why tags are never made by hand. Pushing
+the tag triggers `.github/workflows/release.yaml`, which drafts a GitHub
+release. A human reviews and publishes it.
