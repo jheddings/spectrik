@@ -64,6 +64,9 @@ func RegisterSpec[P Target](r *Registry, name string, newSpec func() Spec[P]) {
 		case StrategyEnsure:
 			return Ensure[P]{Spec: spec}, nil
 		case StrategyAbsent:
+			if _, ok := spec.(Remover[P]); !ok {
+				return nil, fmt.Errorf("spec %s: %w", name, ErrNotRemovable)
+			}
 			return Absent[P]{Spec: spec}, nil
 		}
 		return nil, fmt.Errorf("spec %s: unknown strategy %q", name, strategy)

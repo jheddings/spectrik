@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 
 	"github.com/hashicorp/hcl/v2"
@@ -188,10 +189,7 @@ func (w *Workspace) resolveBlueprint(name string, subject *hcl.Range, resolving 
 func (w *Workspace) resolveProject(name string) (Target, hcl.Diagnostics) {
 	ref := w.projects[name]
 	t, err := w.registry.NewProject(ref.typeName, func(p any) error {
-		if d := gohcl.DecodeBody(ref.remain, ref.ctx, p); d.HasErrors() {
-			return d
-		}
-		return nil
+		return decodeBody(ref.remain, ref.ctx, p)
 	})
 	if err != nil {
 		return nil, asDiagnostics(err, ref.defRange)
@@ -224,10 +222,7 @@ func (w *Workspace) decodeOps(blocks hcl.Blocks, ctx *hcl.EvalContext) ([]Op, hc
 	var diags hcl.Diagnostics
 	for _, block := range blocks {
 		op, err := w.registry.NewOp(block.Labels[0], Strategy(block.Type), func(spec any) error {
-			if d := gohcl.DecodeBody(block.Body, ctx, spec); d.HasErrors() {
-				return d
-			}
-			return nil
+			return decodeBody(block.Body, ctx, spec)
 		})
 		if err != nil {
 			diags = append(diags, asDiagnostics(err, block.DefRange)...)
@@ -236,6 +231,20 @@ func (w *Workspace) decodeOps(blocks hcl.Blocks, ctx *hcl.EvalContext) ([]Op, hc
 		ops = append(ops, op)
 	}
 	return ops, diags
+}
+
+// decodeBody decodes an HCL body into v, which must be a non-nil pointer
+// to a struct. gohcl panics on anything else, so the check happens here
+// and reports a registration mistake as an ordinary load error.
+func decodeBody(body hcl.Body, ctx *hcl.EvalContext, v any) error {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return fmt.Errorf("must be a pointer, got %T", v)
+	}
+	if d := gohcl.DecodeBody(body, ctx, v); d.HasErrors() {
+		return d
+	}
+	return nil
 }
 
 // asDiagnostics passes hcl diagnostics through and wraps any other error

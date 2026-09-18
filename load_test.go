@@ -517,6 +517,57 @@ blueprint "base" {
 	assertErrorContains(t, err, `unknown spec type "widget"`, "blueprints.hcl:3,3")
 }
 
+// plainSpec implements only Apply, so it cannot be used with absent.
+type plainSpec struct {
+	Text string `hcl:"text,optional"`
+}
+
+func (s *plainSpec) Apply(ctx context.Context, p *testProject) error { return nil }
+
+func TestLoadAbsentOnNonRemovableSpecFails(t *testing.T) {
+	reg := newLoadRegistry()
+	RegisterSpec(reg, "plain", func() Spec[*testProject] { return &plainSpec{} })
+
+	_, err := loadFiles(t, map[string]string{
+		"config.hcl": `
+project "red" {
+  absent "plain" {}
+}
+`,
+	}, Options{Registry: reg})
+
+	assertErrorContains(t, err, "spec plain: spec does not support removal", "config.hcl:3,3")
+}
+
+func TestLoadRejectsValueTypeSpec(t *testing.T) {
+	reg := newLoadRegistry()
+	RegisterSpec(reg, "byvalue", func() Spec[*testProject] { return applySpec{&spy{}} })
+
+	_, err := loadFiles(t, map[string]string{
+		"config.hcl": `
+project "red" {
+  ensure "byvalue" {}
+}
+`,
+	}, Options{Registry: reg})
+
+	assertErrorContains(t, err, "spec byvalue: must be a pointer, got spectrik.applySpec", "config.hcl:3,3")
+}
+
+// valueProject satisfies Target by value, which gohcl cannot decode into.
+type valueProject struct{ *Project }
+
+func TestLoadRejectsValueTypeProject(t *testing.T) {
+	reg := newLoadRegistry()
+	RegisterProject(reg, "byvalue", func() valueProject { return valueProject{&Project{}} })
+
+	_, err := loadFiles(t, map[string]string{
+		"config.hcl": `byvalue "red" {}`,
+	}, Options{Registry: reg})
+
+	assertErrorContains(t, err, "project type byvalue: must be a pointer, got spectrik.valueProject", "config.hcl:1,1")
+}
+
 func TestLoadUnknownBlockType(t *testing.T) {
 	_, err := loadFiles(t, map[string]string{
 		"config.hcl": `

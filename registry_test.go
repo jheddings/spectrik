@@ -77,6 +77,19 @@ func TestNewOpDecodesTheSpecBeforeWrapping(t *testing.T) {
 	}
 }
 
+func TestNewOpRejectsAbsentForNonRemovableSpec(t *testing.T) {
+	reg := NewRegistry()
+	RegisterSpec(reg, "plain", func() Spec[*testProject] { return applySpec{&spy{}} })
+
+	_, err := reg.NewOp("plain", StrategyAbsent, nil)
+	if !errors.Is(err, ErrNotRemovable) {
+		t.Fatalf("err = %v, want ErrNotRemovable", err)
+	}
+	if got, want := err.Error(), "spec plain: spec does not support removal"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
 func TestNewOpReturnsDecodeError(t *testing.T) {
 	reg := newTestRegistry()
 	errDecode := errors.New("bad attribute")
