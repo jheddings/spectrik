@@ -51,31 +51,11 @@ its predecessor `go-spec`. One concern per file, with a matching
 Anything not yet decided is listed under "Design decisions to settle" in
 the ADR. Settle it there first, then implement.
 
-## Commit Conventions
+## Conventions
 
-Use [Conventional Commits](https://www.conventionalcommits.org/) format:
-
-```
-<type>(<scope>): <description>
-```
-
-Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `style`, `perf`
-
-Scope is optional but encouraged (e.g. `fix(hcl): ...`, `feat(workspace): ...`).
-
-Include the issue number when applicable (e.g. `feat: add variables block (#21)`).
-
-## Branch Naming
-
-Use the same type prefixes as commits, followed by a short description:
-
-```
-<type>/<short-description>
-```
-
-Examples: `feat/hcl-variables`, `fix/resolver-escaping`, `chore/update-deps`
-
-Optionally include the issue number: `feat/21-hcl-variables`
+Commit format, branch naming, and markdown wrapping are recorded in
+`docs/almanac/` — one entry each, and those entries are the only copy. See
+`AGENTS.md` for how to use the almanac.
 
 ## Development
 
