@@ -35,6 +35,20 @@ func TestDryRunInheritedByChildContext(t *testing.T) {
 	}
 }
 
+func TestContextValuesDoNotCollide(t *testing.T) {
+	h := &Hooks{}
+
+	ctx := WithHooks(WithContinueOnError(WithDryRun(context.Background(), true), true), h)
+	if !IsDryRun(ctx) || !ContinueOnError(ctx) || hooksFrom(ctx) != h {
+		t.Fatalf("dryRun=%t continue=%t hooks=%p; every value should survive", IsDryRun(ctx), ContinueOnError(ctx), hooksFrom(ctx))
+	}
+
+	ctx = WithDryRun(WithContinueOnError(WithHooks(context.Background(), h), true), true)
+	if !IsDryRun(ctx) || !ContinueOnError(ctx) || hooksFrom(ctx) != h {
+		t.Fatalf("dryRun=%t continue=%t hooks=%p; every value should survive regardless of order", IsDryRun(ctx), ContinueOnError(ctx), hooksFrom(ctx))
+	}
+}
+
 func TestContinueOnErrorDefaultsToFalse(t *testing.T) {
 	if ContinueOnError(context.Background()) {
 		t.Fatal("ContinueOnError = true on a bare context, want false")

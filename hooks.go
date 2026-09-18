@@ -24,8 +24,6 @@ type Hooks struct {
 	SpecFinish  func(Event)
 }
 
-const hooksKey contextKey = iota + 1
-
 // WithHooks returns a context whose strategy runs report to h.
 func WithHooks(ctx context.Context, h *Hooks) context.Context {
 	return context.WithValue(ctx, hooksKey, h)

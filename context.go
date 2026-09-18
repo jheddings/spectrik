@@ -2,11 +2,14 @@ package spectrik
 
 import "context"
 
+// contextKey is the type for every value this package stores in a context.
+// All keys live in this one const block so they can never collide.
 type contextKey int
 
 const (
 	dryRunKey contextKey = iota
 	continueKey
+	hooksKey
 )
 
 // WithDryRun returns a context in which strategies report what they would
