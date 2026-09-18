@@ -1,5 +1,8 @@
 # CLAUDE.md — spectrik
 
+Also read `AGENTS.md` — it carries instructions shared by every agent
+working here, including the almanac.
+
 ## Overview
 
 spectrik is a public Go library. It provides a generic
