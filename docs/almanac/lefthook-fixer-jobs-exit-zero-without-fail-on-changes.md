@@ -9,7 +9,7 @@ tags: [ci, lefthook, git-hooks, silent-failure]
 ---
 
 `lefthook run <hook> --all-files` exits 0 after one of its jobs has rewritten a file.
-The `trailing-whitespace` job in `lefthook.yml` is a fixer — it repairs the file in
+The `trailing-whitespace` job in `lefthook.yaml` is a fixer — it repairs the file in
 place and returns success — and in CI there is no commit to carry that repair, so it is
 discarded with the runner.
 
