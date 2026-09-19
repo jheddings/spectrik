@@ -85,3 +85,66 @@ func Example_dryRun() {
 	// laptop ensure: dry run; would apply (equality unknown)
 	// laptop ensure: dry run; would apply (equality unknown)
 }
+
+// Blueprints and projects can also be built in Go instead of loaded from
+// HCL, for tests, generated configuration, or tools that compose a target
+// from another source.
+
+func ExampleNewBlueprint() {
+	base := spectrik.NewBlueprint[*Machine]("base").
+		Ensure(&Note{Text: "from base"}).
+		Build()
+
+	greet := spectrik.NewBlueprint[*Machine]("greet").
+		Description("say hello").
+		Include(base).
+		Ensure(&Note{Text: "hello jason"}).
+		Build()
+
+	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").Use(greet).Build()
+	if err := spectrik.Build(context.Background(), laptop); err != nil {
+		fmt.Println(err)
+	}
+	// Output:
+	// apply "from base" on laptop
+	// apply "hello jason" on laptop
+}
+
+func ExampleNewProject() {
+	greet := spectrik.NewBlueprint[*Machine]("greet").
+		Ensure(&Note{Text: "hello jason"}).
+		Build()
+
+	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").
+		Description("Jason's laptop.").
+		Use(greet).
+		Ensure(&Note{Text: "inline!"}).
+		Build()
+
+	if err := spectrik.Build(context.Background(), laptop); err != nil {
+		fmt.Println(err)
+	}
+	// Output:
+	// apply "hello jason" on laptop
+	// apply "inline!" on laptop
+}
+
+func ExampleBlueprintBuilder_EnsureDeferred() {
+	// hostname is not known while the chain is written.
+	var hostname string
+
+	greet := spectrik.NewBlueprint[*Machine]("greet").
+		EnsureDeferred(func() spectrik.Spec[*Machine] {
+			return &Note{Text: "hello from " + hostname}
+		}).
+		Build()
+
+	hostname = "laptop"
+
+	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").Use(greet).Build()
+	if err := spectrik.Build(context.Background(), laptop); err != nil {
+		fmt.Println(err)
+	}
+	// Output:
+	// apply "hello from laptop" on laptop
+}
