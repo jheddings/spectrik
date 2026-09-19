@@ -9,7 +9,7 @@ import (
 func TestBlueprintBuilderSetsNameAndDescription(t *testing.T) {
 	bp := NewBlueprint[*testProject]("dotfiles").
 		Description("symlinks and shell config").
-		Build()
+		Compose()
 
 	if got, want := bp.Name, "dotfiles"; got != want {
 		t.Fatalf("Name = %q, want %q", got, want)
@@ -27,7 +27,7 @@ func TestBlueprintBuilderWrapsSpecsInStrategies(t *testing.T) {
 		Present(spec).
 		Ensure(spec).
 		Absent(removable).
-		Build()
+		Compose()
 
 	if len(bp.Ops) != 3 {
 		t.Fatalf("len(Ops) = %d, want 3", len(bp.Ops))
@@ -49,7 +49,7 @@ func TestBlueprintBuilderKeepsOpsInCallOrder(t *testing.T) {
 		Op(recordOp{label: "one", log: &log}).
 		Op(recordOp{label: "two", log: &log}).
 		Op(recordOp{label: "three", log: &log}).
-		Build()
+		Compose()
 
 	if err := bp.Build(context.Background(), newTarget()); err != nil {
 		t.Fatal(err)
@@ -64,13 +64,13 @@ func TestBlueprintBuilderIncludeFlattensOpsInPlace(t *testing.T) {
 	base := NewBlueprint[*testProject]("base").
 		Op(recordOp{label: "base-one", log: &log}).
 		Op(recordOp{label: "base-two", log: &log}).
-		Build()
+		Compose()
 
 	bp := NewBlueprint[*testProject]("outer").
 		Op(recordOp{label: "before", log: &log}).
 		Include(base).
 		Op(recordOp{label: "after", log: &log}).
-		Build()
+		Compose()
 
 	if err := bp.Build(context.Background(), newTarget()); err != nil {
 		t.Fatal(err)
@@ -84,12 +84,12 @@ func TestBlueprintBuilderIncludeDoesNotAliasTheIncludedBlueprint(t *testing.T) {
 	var log []string
 	base := NewBlueprint[*testProject]("base").
 		Op(recordOp{label: "base-one", log: &log}).
-		Build()
+		Compose()
 
 	NewBlueprint[*testProject]("outer").
 		Include(base).
 		Op(recordOp{label: "after", log: &log}).
-		Build()
+		Compose()
 
 	if got := len(base.Ops); got != 1 {
 		t.Fatalf("len(base.Ops) = %d, want 1; Include mutated the included blueprint", got)
@@ -108,11 +108,11 @@ func TestBlueprintBuilderAbsentPanicsOnSpecWithoutRemover(t *testing.T) {
 		}
 	}()
 
-	NewBlueprint[*testProject]("bad").Absent(applySpec{&spy{}}).Build()
+	NewBlueprint[*testProject]("bad").Absent(applySpec{&spy{}}).Compose()
 }
 
 func TestBlueprintBuilderBuildsAnEmptyBlueprint(t *testing.T) {
-	bp := NewBlueprint[*testProject]("empty").Build()
+	bp := NewBlueprint[*testProject]("empty").Compose()
 
 	if bp.Name != "empty" {
 		t.Fatalf("Name = %q, want %q", bp.Name, "empty")
@@ -128,7 +128,7 @@ func TestBlueprintBuilderBuildsAnEmptyBlueprint(t *testing.T) {
 func TestProjectBuilderSetsNameAndDescription(t *testing.T) {
 	p := NewProject(&testProject{}, "red").
 		Description("the red machine").
-		Build()
+		Construct()
 
 	if got, want := p.Name, "red"; got != want {
 		t.Fatalf("Name = %q, want %q", got, want)
@@ -139,7 +139,7 @@ func TestProjectBuilderSetsNameAndDescription(t *testing.T) {
 }
 
 func TestProjectBuilderReturnsTheConcreteTarget(t *testing.T) {
-	p := NewProject(&testProject{Owner: "risefamily"}, "red").Build()
+	p := NewProject(&testProject{Owner: "risefamily"}, "red").Construct()
 
 	if got, want := p.Owner, "risefamily"; got != want {
 		t.Fatalf("Owner = %q, want %q; builder did not return the concrete target", got, want)
@@ -148,10 +148,10 @@ func TestProjectBuilderReturnsTheConcreteTarget(t *testing.T) {
 
 func TestProjectBuilderUseAppendsBlueprintsInOrder(t *testing.T) {
 	var log []string
-	one := NewBlueprint[*testProject]("one").Op(recordOp{label: "one", log: &log}).Build()
-	two := NewBlueprint[*testProject]("two").Op(recordOp{label: "two", log: &log}).Build()
+	one := NewBlueprint[*testProject]("one").Op(recordOp{label: "one", log: &log}).Compose()
+	two := NewBlueprint[*testProject]("two").Op(recordOp{label: "two", log: &log}).Compose()
 
-	p := NewProject(&testProject{}, "red").Use(one).Use(two).Build()
+	p := NewProject(&testProject{}, "red").Use(one).Use(two).Construct()
 
 	if got := len(p.Blueprints); got != 2 {
 		t.Fatalf("len(Blueprints) = %d, want 2", got)
@@ -166,12 +166,12 @@ func TestProjectBuilderUseAppendsBlueprintsInOrder(t *testing.T) {
 
 func TestProjectBuilderCollectsLooseOpsIntoAnInlineBlueprint(t *testing.T) {
 	var log []string
-	bp := NewBlueprint[*testProject]("used").Op(recordOp{label: "used", log: &log}).Build()
+	bp := NewBlueprint[*testProject]("used").Op(recordOp{label: "used", log: &log}).Compose()
 
 	p := NewProject(&testProject{}, "red").
 		Op(recordOp{label: "loose", log: &log}).
 		Use(bp).
-		Build()
+		Construct()
 
 	if got := len(p.Blueprints); got != 2 {
 		t.Fatalf("len(Blueprints) = %d, want 2", got)
@@ -190,9 +190,9 @@ func TestProjectBuilderCollectsLooseOpsIntoAnInlineBlueprint(t *testing.T) {
 }
 
 func TestProjectBuilderAddsNoInlineBlueprintWithoutLooseOps(t *testing.T) {
-	bp := NewBlueprint[*testProject]("used").Build()
+	bp := NewBlueprint[*testProject]("used").Compose()
 
-	p := NewProject(&testProject{}, "red").Use(bp).Build()
+	p := NewProject(&testProject{}, "red").Use(bp).Construct()
 
 	if got := len(p.Blueprints); got != 1 {
 		t.Fatalf("len(Blueprints) = %d, want 1", got)
@@ -207,7 +207,7 @@ func TestProjectBuilderWrapsLooseSpecsInStrategies(t *testing.T) {
 		Present(spec).
 		Ensure(spec).
 		Absent(removable).
-		Build()
+		Construct()
 
 	if got := len(p.Blueprints); got != 1 {
 		t.Fatalf("len(Blueprints) = %d, want 1", got)
@@ -234,14 +234,14 @@ func TestProjectBuilderAbsentPanicsOnSpecWithoutRemover(t *testing.T) {
 		}
 	}()
 
-	NewProject(&testProject{}, "red").Absent(applySpec{&spy{}}).Build()
+	NewProject(&testProject{}, "red").Absent(applySpec{&spy{}}).Construct()
 }
 
 func TestBuiltProjectAppliesItsSpecs(t *testing.T) {
 	s := &spy{}
-	bp := NewBlueprint[*testProject]("dotfiles").Ensure(applySpec{s}).Build()
+	bp := NewBlueprint[*testProject]("dotfiles").Ensure(applySpec{s}).Compose()
 
-	p := NewProject(&testProject{}, "red").Use(bp).Build()
+	p := NewProject(&testProject{}, "red").Use(bp).Construct()
 
 	if err := Build(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -253,9 +253,9 @@ func TestBuiltProjectAppliesItsSpecs(t *testing.T) {
 
 func TestBuiltProjectHonoursDryRun(t *testing.T) {
 	s := &spy{}
-	bp := NewBlueprint[*testProject]("dotfiles").Ensure(applySpec{s}).Build()
+	bp := NewBlueprint[*testProject]("dotfiles").Ensure(applySpec{s}).Compose()
 
-	p := NewProject(&testProject{}, "red").Use(bp).Build()
+	p := NewProject(&testProject{}, "red").Use(bp).Construct()
 
 	if err := Build(WithDryRun(context.Background(), true), p); err != nil {
 		t.Fatal(err)
@@ -272,7 +272,7 @@ func TestDeferredDoesNotBuildTheSpecWhileChaining(t *testing.T) {
 			calls++
 			return applySpec{&spy{}}
 		}).
-		Build()
+		Compose()
 
 	if calls != 0 {
 		t.Fatalf("constructor ran %d times while building the chain, want 0", calls)
@@ -287,7 +287,7 @@ func TestDeferredBuildsTheSpecOnFirstRun(t *testing.T) {
 			calls++
 			return applySpec{s}
 		}).
-		Build()
+		Compose()
 
 	if err := bp.Build(context.Background(), newTarget()); err != nil {
 		t.Fatal(err)
@@ -307,7 +307,7 @@ func TestDeferredBuildsTheSpecOnlyOnceAcrossRuns(t *testing.T) {
 			calls++
 			return applySpec{&spy{}}
 		}).
-		Build()
+		Compose()
 
 	for range 3 {
 		if err := bp.Build(context.Background(), newTarget()); err != nil {
@@ -324,7 +324,7 @@ func TestDeferredHonoursOptionalInterfacesOnTheResolvedSpec(t *testing.T) {
 	s := &spy{equals: true}
 	bp := NewBlueprint[*testProject]("late").
 		EnsureDeferred(func() Spec[*testProject] { return equalsSpec{applySpec{s}} }).
-		Build()
+		Compose()
 
 	if err := bp.Build(context.Background(), newTarget()); err != nil {
 		t.Fatal(err)
@@ -338,7 +338,7 @@ func TestDeferredAbsentRemovesThroughTheResolvedRemover(t *testing.T) {
 	s := &spy{exists: true}
 	bp := NewBlueprint[*testProject]("late").
 		AbsentDeferred(func() Spec[*testProject] { return removeSpec{existsSpec{applySpec{s}}} }).
-		Build()
+		Compose()
 
 	if err := bp.Build(context.Background(), newTarget()); err != nil {
 		t.Fatal(err)
@@ -353,7 +353,7 @@ func TestDeferredAbsentReportsNotRemovableAtRun(t *testing.T) {
 	// does not exist yet, so it falls back to the strategy's run-time error.
 	bp := NewBlueprint[*testProject]("late").
 		AbsentDeferred(func() Spec[*testProject] { return applySpec{&spy{}} }).
-		Build()
+		Compose()
 
 	err := bp.Build(context.Background(), newTarget())
 	if !errors.Is(err, ErrNotRemovable) {
@@ -365,7 +365,7 @@ func TestDeferredDescribesTheResolvedSpec(t *testing.T) {
 	spec := applySpec{&spy{}}
 	bp := NewBlueprint[*testProject]("late").
 		PresentDeferred(func() Spec[*testProject] { return spec }).
-		Build()
+		Compose()
 
 	d, ok := bp.Ops[0].(Describer)
 	if !ok {
@@ -385,7 +385,7 @@ func TestDeferredReportsTheSameSpecToEveryHookEvent(t *testing.T) {
 	// op must carry the same value.
 	bp := NewBlueprint[*testProject]("late").
 		EnsureDeferred(func() Spec[*testProject] { return applySpec{&spy{}} }).
-		Build()
+		Compose()
 
 	var seen []any
 	ctx := WithHooks(context.Background(), &Hooks{
@@ -415,7 +415,7 @@ func TestProjectBuilderDeferredWrapsInStrategies(t *testing.T) {
 		PresentDeferred(func() Spec[*testProject] { return applySpec{&spy{}} }).
 		EnsureDeferred(func() Spec[*testProject] { return applySpec{&spy{}} }).
 		AbsentDeferred(func() Spec[*testProject] { return removeSpec{existsSpec{applySpec{&spy{}}}} }).
-		Build()
+		Construct()
 
 	ops := p.Blueprints[0].Ops
 	if len(ops) != 3 {
@@ -441,10 +441,10 @@ func TestProjectBuilderDeferredAppliesAtBuildTime(t *testing.T) {
 			late = "resolved"
 			return applySpec{s}
 		}).
-		Build()
+		Construct()
 
 	if late != "" {
-		t.Fatalf("constructor ran during Build(), want it deferred to the run")
+		t.Fatalf("constructor ran during Construct(), want it deferred to the run")
 	}
 	if err := Build(context.Background(), p); err != nil {
 		t.Fatal(err)

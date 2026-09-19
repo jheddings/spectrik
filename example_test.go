@@ -93,15 +93,15 @@ func Example_dryRun() {
 func ExampleNewBlueprint() {
 	base := spectrik.NewBlueprint[*Machine]("base").
 		Ensure(&Note{Text: "from base"}).
-		Build()
+		Compose()
 
 	greet := spectrik.NewBlueprint[*Machine]("greet").
 		Description("say hello").
 		Include(base).
 		Ensure(&Note{Text: "hello jason"}).
-		Build()
+		Compose()
 
-	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").Use(greet).Build()
+	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").Use(greet).Construct()
 	if err := spectrik.Build(context.Background(), laptop); err != nil {
 		fmt.Println(err)
 	}
@@ -113,13 +113,13 @@ func ExampleNewBlueprint() {
 func ExampleNewProject() {
 	greet := spectrik.NewBlueprint[*Machine]("greet").
 		Ensure(&Note{Text: "hello jason"}).
-		Build()
+		Compose()
 
 	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").
 		Description("Jason's laptop.").
 		Use(greet).
 		Ensure(&Note{Text: "inline!"}).
-		Build()
+		Construct()
 
 	if err := spectrik.Build(context.Background(), laptop); err != nil {
 		fmt.Println(err)
@@ -137,11 +137,11 @@ func ExampleBlueprintBuilder_EnsureDeferred() {
 		EnsureDeferred(func() spectrik.Spec[*Machine] {
 			return &Note{Text: "hello from " + hostname}
 		}).
-		Build()
+		Compose()
 
 	hostname = "laptop"
 
-	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").Use(greet).Build()
+	laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").Use(greet).Construct()
 	if err := spectrik.Build(context.Background(), laptop); err != nil {
 		fmt.Println(err)
 	}

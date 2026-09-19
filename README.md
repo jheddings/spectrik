@@ -108,15 +108,19 @@ configuration, or when a target comes from something other than a file:
 dotfiles := spectrik.NewBlueprint[*Machine]("dotfiles").
     Description("symlinks and shell config").
     Ensure(&Symlink{Link: "~/.zshrc", Target: "~/dotfiles/zshrc"}).
-    Build()
+    Compose()
 
 laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").
     Description("Jason's laptop.").
     Use(dotfiles).
-    Build()
+    Construct()
 
 err := spectrik.Build(ctx, laptop)
 ```
+
+A chain ends with `Compose` for a blueprint and `Construct` for a
+project. Neither is called `Build`, which throughout this package means
+running a blueprint or project against a target.
 
 The builders produce ordinary `*Blueprint` and target values, so both
 paths meet at the same model. `Include` and `Use` behave as the HCL
@@ -133,7 +137,7 @@ spectrik.NewBlueprint[*Machine]("p10k").
     EnsureDeferred(func() spectrik.Spec[*Machine] {
         return &GitPull{Repo: cfg.Repo(), Dest: cfg.Dest()}
     }).
-    Build()
+    Compose()
 ```
 
 The spec is built when the op first runs, once, and the strategy wraps the

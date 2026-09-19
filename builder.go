@@ -24,7 +24,7 @@ import (
 // are unaffected; one that does not should be built per project.
 
 // BlueprintBuilder assembles a Blueprint for project type P. Create one
-// with NewBlueprint, chain calls onto it, and finish with Build. A builder
+// with NewBlueprint, chain calls onto it, and finish with Compose. A builder
 // is single-use and is not safe for concurrent use.
 type BlueprintBuilder[P Target] struct {
 	bp *Blueprint
@@ -35,7 +35,7 @@ type BlueprintBuilder[P Target] struct {
 //
 //	spectrik.NewBlueprint[*Machine]("dotfiles").
 //	    Ensure(&Symlink{Link: "~/.zshrc", Target: "~/dotfiles/zshrc"}).
-//	    Build()
+//	    Compose()
 func NewBlueprint[P Target](name string) *BlueprintBuilder[P] {
 	return &BlueprintBuilder[P]{bp: &Blueprint{Name: name}}
 }
@@ -100,13 +100,15 @@ func (b *BlueprintBuilder[P]) Include(bp *Blueprint) *BlueprintBuilder[P] {
 	return b
 }
 
-// Build returns the assembled blueprint.
-func (b *BlueprintBuilder[P]) Build() *Blueprint {
+// Compose returns the assembled blueprint. It is named for what it
+// returns rather than Build, which throughout this package means running
+// a blueprint or project against a target.
+func (b *BlueprintBuilder[P]) Compose() *Blueprint {
 	return b.bp
 }
 
 // ProjectBuilder assembles a build target of type P. Create one with
-// NewProject, chain calls onto it, and finish with Build. A builder is
+// NewProject, chain calls onto it, and finish with Construct. A builder is
 // single-use and is not safe for concurrent use.
 type ProjectBuilder[P Target] struct {
 	target P
@@ -120,9 +122,9 @@ type ProjectBuilder[P Target] struct {
 //	spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").
 //	    Description("Jason's laptop.").
 //	    Use(dotfiles).
-//	    Build()
+//	    Construct()
 //
-// The target is populated in place and returned by Build, so P is inferred
+// The target is populated in place and returned by Construct, so P is inferred
 // from it and never has to be written out.
 func NewProject[P Target](target P, name string) *ProjectBuilder[P] {
 	base := target.Base()
@@ -145,7 +147,7 @@ func (b *ProjectBuilder[P]) Use(bp *Blueprint) *ProjectBuilder[P] {
 
 // Op appends an op directly to the project rather than to a blueprint. It
 // is the escape hatch for ops of a different project type, which the
-// strategy methods cannot express. See Build for where these ops run.
+// strategy methods cannot express. See Construct for where these ops run.
 func (b *ProjectBuilder[P]) Op(op Op) *ProjectBuilder[P] {
 	b.inline = append(b.inline, op)
 	return b
@@ -184,13 +186,15 @@ func (b *ProjectBuilder[P]) AbsentDeferred(newSpec func() Spec[P]) *ProjectBuild
 	return b.Op(deferOp(newSpec, absentOp[P]))
 }
 
-// Build returns the populated target.
+// Construct returns the populated target. It is named for what it does
+// rather than Build, which throughout this package means running a
+// blueprint or project against a target.
 //
 // Ops added directly to the project are collected into one blueprint named
 // "<project>:inline", appended after every blueprint the project uses.
 // That is the same shape and the same ordering the HCL loader gives to
 // strategy blocks written inline in a project block.
-func (b *ProjectBuilder[P]) Build() P {
+func (b *ProjectBuilder[P]) Construct() P {
 	if len(b.inline) > 0 {
 		b.base.Blueprints = append(b.base.Blueprints, &Blueprint{
 			Name: b.base.Name + ":inline",
