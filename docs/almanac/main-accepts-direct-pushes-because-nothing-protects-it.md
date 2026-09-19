@@ -4,7 +4,7 @@ kind: fact
 recorded: 2026-09-18
 source: "Checked while initializing the almanac, 2026-09-18"
 verify: "`gh api repos/jheddings/spectrik/branches/main/protection` returns 404 Branch not protected, and `gh api repos/jheddings/spectrik/rulesets` returns []"
-verified: 2026-09-18
+verified: 2026-09-19
 tags: [git, github, main, guardrails, silent-failure]
 ---
 

@@ -4,7 +4,7 @@ kind: fact
 recorded: 2026-09-18
 source: "CLAUDE.md § Testing and § Architecture, checked against registry.go 2026-09-18"
 verify: "`grep -rn '^var ' *.go | grep -v _test.go` shows no registry variable, and `grep -n 'func RegisterSpec' registry.go` shows it takes an explicit `*Registry`"
-verified: 2026-09-18
+verified: 2026-09-19
 tags: [testing, registry, go, python-port]
 ---
 
