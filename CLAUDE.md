@@ -27,9 +27,8 @@ The port's rationale, prior art, and open design decisions are in
 
 ## Architecture
 
-The library is a single flat package, `spectrik`, following the layout of
-its predecessor `go-spec`. One concern per file, with a matching
-`_test.go` beside it.
+The library is a single flat package, `spectrik`. One concern per file,
+with a matching `_test.go` beside it.
 
 - **Spec** — interface for a desired-state resource. `Apply` is required;
   comparison, existence, and removal are optional interfaces detected by

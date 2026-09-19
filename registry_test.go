@@ -132,7 +132,7 @@ func TestNewProjectConstructsAndDecodes(t *testing.T) {
 	RegisterProject(reg, "github", func() *testProject { return &testProject{} })
 
 	tgt, err := reg.NewProject("github", func(p any) error {
-		p.(*testProject).Owner = "risefamily"
+		p.(*testProject).Owner = "acme"
 		return nil
 	})
 	if err != nil {
@@ -142,8 +142,8 @@ func TestNewProjectConstructsAndDecodes(t *testing.T) {
 	if !ok {
 		t.Fatalf("project is %T, want *testProject", tgt)
 	}
-	if got.Owner != "risefamily" {
-		t.Fatalf("Owner = %q, want %q", got.Owner, "risefamily")
+	if got.Owner != "acme" {
+		t.Fatalf("Owner = %q, want %q", got.Owner, "acme")
 	}
 }
 
