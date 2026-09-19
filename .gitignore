@@ -11,6 +11,7 @@
 local.env
 local.yaml
 settings.local.json
+lefthook-local.yml
 
 dist
 tmp

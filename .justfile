@@ -8,7 +8,8 @@ default: setup preflight
 # setup the local development environment
 setup:
 	go mod tidy
-	pre-commit install --install-hooks --overwrite
+	@command -v lefthook >/dev/null || { echo "lefthook not found: brew install lefthook"; exit 1; }
+	lefthook install --force
 
 # auto-format
 tidy: setup
@@ -16,7 +17,7 @@ tidy: setup
 
 # run format and vet checks
 check:
-	gofmt -l . | grep . && exit 1 || true
+	gofmt -l $(git ls-files -co --exclude-standard '*.go') | grep . && exit 1 || true
 	go vet ./...
 
 # run unit tests
@@ -56,5 +57,5 @@ clean:
 
 # remove everything including caches
 clobber: clean
-	pre-commit uninstall || true
+	lefthook uninstall || true
 	go clean -cache -testcache

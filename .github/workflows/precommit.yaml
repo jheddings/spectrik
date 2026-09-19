@@ -8,10 +8,33 @@ name: Pre-commit Checks
   pull_request:
     branches: [main]
 
+env:
+  # renovate: datasource=go depName=github.com/evilmartians/lefthook/v2
+  LEFTHOOK_VERSION: v2.1.14
+
 jobs:
   precommit_check:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-python@v7.0.0
-      - uses: pre-commit/action@v3.0.1
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install lefthook
+        env:
+          # setup-go pins GOTOOLCHAIN=local to the go.mod directive, which is
+          # older than lefthook needs to build itself.
+          GOTOOLCHAIN: auto
+        run: go install "github.com/evilmartians/lefthook/v2@${LEFTHOOK_VERSION}"
+
+      - name: Run hooks
+        # --fail-on-changes is load-bearing: a fixer job repairs the file and
+        # exits 0, so without it this step passes on repairs it then discards.
+        run: >-
+          lefthook run pre-commit --all-files --force
+          --no-auto-install --fail-on-changes --no-stage-fixed

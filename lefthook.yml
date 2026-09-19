@@ -1,0 +1,34 @@
+# Configure git hooks
+---
+pre-commit:
+  jobs:
+    - name: gofmt
+      glob: "*.go"
+      run: |
+        out=$(gofmt -l {staged_files}) || exit 1
+        [ -z "$out" ] || { echo "$out"; exit 1; }
+
+    # gofmt owns whitespace in Go sources, so they are excluded here.
+    - name: trailing-whitespace
+      exclude:
+        - "*.go"
+      stage_fixed: true
+      run: |
+        for f in {staged_files}; do
+          [ -f "$f" ] && grep -Iq . "$f" || continue
+          sed -E 's/[[:space:]]+$//' "$f" > "$f.lefthook~" && cat "$f.lefthook~" > "$f"
+          rm -f "$f.lefthook~"
+        done
+
+    # Only the angle markers are matched; a bare ======= is a setext heading.
+    - name: check-merge-conflict
+      run: |
+        found=$(grep -lIE '^(<{7}|>{7}|\|{7}) ' {staged_files}) || exit 0
+        [ -z "$found" ] || { echo "$found"; exit 1; }
+
+    # No file template: a case conflict is between two paths, and the other
+    # one may not be part of this commit.
+    - name: check-case-conflict
+      run: |
+        dupes=$(git ls-files | tr 'A-Z' 'a-z' | sort | uniq -d)
+        [ -z "$dupes" ] || { echo "$dupes"; exit 1; }

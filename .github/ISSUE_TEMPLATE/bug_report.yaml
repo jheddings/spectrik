@@ -70,11 +70,11 @@ body:
       description: Help us understand your setup.
       placeholder: |
         - OS: [e.g., macOS 15, Ubuntu 24.04]
-        - Python version: [e.g., 3.12.4]
-        - spectrik version: [pip show spectrik]
+        - Go version: [e.g., 1.26.0]
+        - spectrik version: [e.g., v1.0.0]
       value: |
         - OS:
-        - Python version:
+        - Go version:
         - spectrik version:
 
   - type: dropdown
