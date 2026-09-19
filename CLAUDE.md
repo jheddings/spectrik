@@ -17,7 +17,7 @@ The port's rationale, prior art, and open design decisions are in
 
 ## Guardrails
 
-- **Do not skip pre-commit hooks** (`--no-verify`) unless explicitly asked.
+- **Do not skip git hooks** (`--no-verify`) unless explicitly asked.
 - **No breaking changes without consideration.** This is a published
   library with downstream consumers. Changing the public API surface
   requires careful thought.

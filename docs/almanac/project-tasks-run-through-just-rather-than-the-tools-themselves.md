@@ -18,4 +18,4 @@ Use the `.justfile` recipes rather than invoking the tool directly:
 **Why:** the recipes are the contract CI runs against, so a bare `go test` can pass
 while `just test` fails — the recipe adds `-race`, and a data race is invisible without
 it. The recipes are also where setup is attached: `just tidy` depends on `setup`, which
-installs the pre-commit hooks. Running the tools directly quietly skips all of that.
+installs the lefthook git hooks. Running the tools directly quietly skips all of that.

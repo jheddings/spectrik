@@ -11,8 +11,7 @@ in a PR description, issue body, or review comment.
 
 Inside the repository, wrap markdown prose at 88 columns. **No formatter enforces
 this.** There is no `.mdformat.toml` here, `just check` runs only `gofmt` and `go vet`,
-and pre-commit checks only trailing whitespace and YAML, so the width is yours to hold
-by hand.
+and the git hooks check only trailing whitespace, so the width is yours to hold by hand.
 
 New files get 88. **An existing file wrapped narrower keeps its own width** — match what
 is around you rather than reflowing it. `CLAUDE.md` and the older `docs/` files sit at
