@@ -2,9 +2,11 @@ package spectrik
 
 import "context"
 
-// Event identifies the spec execution a hook is being told about. Spec is
-// the consumer's spec value, so a pointer spec can be used as a map key to
-// correlate Start with the events that follow.
+// Event identifies the spec execution a hook is being told about.
+//
+// Spec is the consumer's own spec value, and it is the same value for every
+// event of one op, so a pointer spec is usable as a map key to correlate
+// SpecStart with the events that follow it.
 type Event struct {
 	Strategy Strategy
 	Spec     any
@@ -15,6 +17,10 @@ type Event struct {
 // in the style of net/http/httptrace.ClientTrace. Any field may be nil.
 // Every run fires SpecStart first and SpecFinish last; exactly one of
 // SpecApplied, SpecRemoved, SpecSkipped, or SpecFailed fires in between.
+//
+// Ops run one at a time, in order, on the goroutine that called Build, and
+// hooks are called from that same goroutine. A Hooks value therefore needs
+// no locking of its own, and at most one op is in flight at any moment.
 type Hooks struct {
 	SpecStart   func(Event)
 	SpecApplied func(Event)
