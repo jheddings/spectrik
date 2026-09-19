@@ -36,6 +36,10 @@ type PostBuilder interface {
 // ContinueOnError, in which case every blueprint runs and the failures are
 // returned joined.
 //
+// Everything runs on the calling goroutine: blueprints in order, and within
+// each blueprint its ops in order, one at a time. Build starts no goroutine
+// of its own, so hooks and specs need no locking against each other.
+//
 // Build is a function rather than a method on Project because an embedded
 // Project cannot see the consumer struct that embeds it, and ops need that
 // outer struct.

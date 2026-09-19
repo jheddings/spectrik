@@ -258,7 +258,7 @@ blueprint "core" {
 func TestLoadMixedProjectTypes(t *testing.T) {
 	ws := mustLoad(t, map[string]string{
 		"projects.hcl": `
-project "red"  { owner = "risefamily" }
+project "red"  { owner = "acme" }
 other   "beta" {}
 `,
 	})
@@ -270,7 +270,7 @@ other   "beta" {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, ok := red.(*testProject); !ok || p.Owner != "risefamily" {
+	if p, ok := red.(*testProject); !ok || p.Owner != "acme" {
 		t.Fatalf("red = %#v, want *testProject with owner", red)
 	}
 	beta, err := ws.Project("beta")

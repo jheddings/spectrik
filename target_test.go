@@ -24,14 +24,14 @@ func TestEmbeddedProjectSatisfiesTarget(t *testing.T) {
 }
 
 func TestAsNarrowsToConcreteType(t *testing.T) {
-	var tgt Target = &testProject{Project: Project{Name: "red"}, Owner: "risefamily"}
+	var tgt Target = &testProject{Project: Project{Name: "red"}, Owner: "acme"}
 
 	got, err := As[*testProject](tgt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Owner != "risefamily" {
-		t.Fatalf("Owner = %q, want %q", got.Owner, "risefamily")
+	if got.Owner != "acme" {
+		t.Fatalf("Owner = %q, want %q", got.Owner, "acme")
 	}
 }
 
