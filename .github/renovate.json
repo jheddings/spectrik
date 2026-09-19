@@ -5,6 +5,6 @@
     "extends": [
         "github>jheddings/regula",
         "config:recommended",
-        "github>jheddings/regula:python"
+        "github>jheddings/regula:golang"
     ]
 }

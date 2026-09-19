@@ -1,69 +1,60 @@
 # justfile for spectrik
 
-basedir := justfile_directory()
-srcdir := basedir / "src"
-
-appname := "spectrik"
-appver := `uv version --short`
+module := "github.com/jheddings/spectrik"
 
 # run setup and preflight checks
 default: setup preflight
 
 # setup the local development environment
-setup: venv
-  uv run pre-commit install --install-hooks --overwrite
+setup:
+	go mod tidy
+	pre-commit install --install-hooks --overwrite
 
-# sync the virtual environment
-venv:
-  uv sync --all-extras
-
-# auto-format, lint-fix
+# auto-format
 tidy: setup
-  uv run ruff format "{{srcdir}}" "{{basedir}}/tests"
-  uv run ruff check --fix "{{srcdir}}" "{{basedir}}/tests"
+	gofmt -w .
+
+# run format and vet checks
+check:
+	gofmt -l . | grep . && exit 1 || true
+	go vet ./...
 
 # run unit tests
-test: setup
-  uv run pytest "{{basedir}}/tests"
-
-# run all static checks
-check: setup
-  uv run ruff format --check "{{srcdir}}" "{{basedir}}/tests"
-  uv run ruff check "{{srcdir}}" "{{basedir}}/tests"
-  uv run pyright "{{srcdir}}" "{{basedir}}/tests"
+test:
+	go test -race ./...
 
 # full static checks and unit tests
 preflight: check test
 
-# build distribution packages
-build: preflight
-  uv build
-
 # verify no uncommitted changes to tracked files
 repo-guard:
-  test -z "$(git status --porcelain -uno)" || (echo "ERROR: working tree is dirty"; exit 1)
+	test -z "$(git status --porcelain -uno)" || (echo "ERROR: working tree is dirty"; exit 1)
 
-# bump version, commit, tag, and push
+# bump version, tag, and push
 release bump="patch": preflight repo-guard
-  #!/usr/bin/env bash
-  uv version --bump {{bump}}
-  VERSION=$(uv version --short)
-  git add pyproject.toml uv.lock
-  git commit -m "bump version to $VERSION"
-  git tag -a "v$VERSION" -m "v$VERSION"
-  git push && git push --tags
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CURRENT=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//')
+	if [ -z "$CURRENT" ]; then
+		CURRENT="0.0.0"
+	fi
+	IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+	case "{{bump}}" in
+		major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+		minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+		patch) PATCH=$((PATCH + 1)) ;;
+		*) echo "Unknown bump type: {{bump}}"; exit 1 ;;
+	esac
+	VERSION="$MAJOR.$MINOR.$PATCH"
+	git tag -a "v$VERSION" -m "v$VERSION"
+	git push && git push --tags
 
-# remove caches and compiled files
+# remove build and test artifacts
 clean:
-  rm -f "{{basedir}}/.coverage"
-  rm -rf "{{basedir}}/.pytest_cache"
-  rm -rf "{{basedir}}/.ruff_cache"
-  find "{{basedir}}" -name "*.pyc" -delete
-  find "{{basedir}}" -name "__pycache__" -type d -exec rm -rf {} +
+	go clean
+	rm -rf tmp
 
-# remove everything including venv and dist
+# remove everything including caches
 clobber: clean
-  uv run pre-commit uninstall || true
-  rm -rf "{{basedir}}/dist"
-  rm -rf "{{basedir}}/.venv"
-  find "{{basedir}}" -name "*.log" -delete
+	pre-commit uninstall || true
+	go clean -cache -testcache
