@@ -63,13 +63,14 @@ func (w *Workspace) Projects() []string {
 }
 
 // Blueprint resolves the named blueprint, including everything it
-// includes, into a fresh Blueprint.
+// includes, into a fresh Blueprint. The returned Ops slice is freshly
+// built, so a caller may reorder or wrap its entries in place.
 func (w *Workspace) Blueprint(name string) (*Blueprint, error) {
 	if _, ok := w.blueprints[name]; !ok {
 		return nil, fmt.Errorf("unknown blueprint %q", name)
 	}
 	bp, diags := w.resolveBlueprint(name, nil, map[string]bool{})
-	if diags.HasErrors() {
+	if diags := dedupeDiags(diags); diags.HasErrors() {
 		return nil, diags
 	}
 	return bp, nil
@@ -77,12 +78,16 @@ func (w *Workspace) Blueprint(name string) (*Blueprint, error) {
 
 // Project resolves the named project into a fresh target of its registered
 // project type, with its blueprints resolved and its attributes decoded.
+//
+// Every call returns a new target holding new Blueprint values with new Ops
+// slices, so a caller may wrap or replace ops in place, and a target
+// mutated by one build never reaches the next.
 func (w *Workspace) Project(name string) (Target, error) {
 	if _, ok := w.projects[name]; !ok {
 		return nil, fmt.Errorf("unknown project %q", name)
 	}
 	t, diags := w.resolveProject(name)
-	if diags.HasErrors() {
+	if diags := dedupeDiags(diags); diags.HasErrors() {
 		return nil, diags
 	}
 	return t, nil
@@ -143,7 +148,27 @@ func (w *Workspace) validate() hcl.Diagnostics {
 		_, d := w.resolveProject(name)
 		diags = append(diags, d...)
 	}
-	return diags
+	return dedupeDiags(diags)
+}
+
+// dedupeDiags drops diagnostics that repeat an earlier one. Validation
+// resolves each blueprint standalone and again through every project that
+// uses it, so without this one bad block is reported once per consumer.
+func dedupeDiags(diags hcl.Diagnostics) hcl.Diagnostics {
+	if len(diags) < 2 {
+		return diags
+	}
+	seen := make(map[string]bool, len(diags))
+	out := make(hcl.Diagnostics, 0, len(diags))
+	for _, d := range diags {
+		key := fmt.Sprintf("%d\x00%s\x00%s\x00%s", d.Severity, d.Subject, d.Summary, d.Detail)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, d)
+	}
+	return out
 }
 
 // resolveBlueprint builds a Blueprint from its ref, resolving includes
@@ -163,7 +188,10 @@ func (w *Workspace) resolveBlueprint(name string, subject *hcl.Range, resolving 
 		return nil, hcl.Diagnostics{{
 			Severity: hcl.DiagError,
 			Summary:  fmt.Sprintf("circular include: blueprint %q includes itself", name),
-			Subject:  subject,
+			Detail: "A blueprint cannot include itself, directly or through the " +
+				"blueprints it includes. Break the cycle by moving the shared " +
+				"operations into a blueprint that includes neither.",
+			Subject: subject,
 		}}
 	}
 	resolving[name] = true
@@ -192,7 +220,9 @@ func (w *Workspace) resolveProject(name string) (Target, hcl.Diagnostics) {
 		return decodeBody(ref.remain, ref.ctx, p)
 	})
 	if err != nil {
-		return nil, asDiagnostics(err, ref.defRange)
+		return nil, asDiagnostics(err, ref.defRange,
+			"The project type comes from the block type. Register it with "+
+				"spectrik.RegisterProject before loading.")
 	}
 
 	base := t.Base()
@@ -225,7 +255,10 @@ func (w *Workspace) decodeOps(blocks hcl.Blocks, ctx *hcl.EvalContext) ([]Op, hc
 			return decodeBody(block.Body, ctx, spec)
 		})
 		if err != nil {
-			diags = append(diags, asDiagnostics(err, block.DefRange)...)
+			diags = append(diags, asDiagnostics(err, block.DefRange,
+				"The spec type comes from the block label. Register it with "+
+					"spectrik.RegisterSpec before loading, and use absent only "+
+					"with a spec that implements Remover.")...)
 			continue
 		}
 		ops = append(ops, op)
@@ -248,8 +281,10 @@ func decodeBody(body hcl.Body, ctx *hcl.EvalContext, v any) error {
 }
 
 // asDiagnostics passes hcl diagnostics through and wraps any other error
-// in a diagnostic pointing at subject.
-func asDiagnostics(err error, subject hcl.Range) hcl.Diagnostics {
+// in a diagnostic pointing at subject. The detail is always set, because
+// hcl renders a diagnostic as "subject: summary; detail" and an empty
+// detail leaves a dangling separator.
+func asDiagnostics(err error, subject hcl.Range, detail string) hcl.Diagnostics {
 	var diags hcl.Diagnostics
 	if errors.As(err, &diags) {
 		return diags
@@ -257,6 +292,7 @@ func asDiagnostics(err error, subject hcl.Range) hcl.Diagnostics {
 	return hcl.Diagnostics{{
 		Severity: hcl.DiagError,
 		Summary:  err.Error(),
+		Detail:   detail,
 		Subject:  &subject,
 	}}
 }
