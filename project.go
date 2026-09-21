@@ -36,6 +36,10 @@ type PostBuilder interface {
 // ContinueOnError, in which case every blueprint runs and the failures are
 // returned joined.
 //
+// Build checks ctx before each blueprint, as Blueprint.Build does before
+// each op, so a cancelled build stops at the next op boundary and reports
+// the cancellation once. PostBuild still runs.
+//
 // Everything runs on the calling goroutine: blueprints in order, and within
 // each blueprint its ops in order, one at a time. Build starts no goroutine
 // of its own, so hooks and specs need no locking against each other.
@@ -62,6 +66,10 @@ func Build(ctx context.Context, t Target) (err error) {
 
 	var errs []error
 	for _, bp := range base.Blueprints {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("project %s: %w", base.Name, err))
+			break
+		}
 		err := bp.Build(ctx, t)
 		if err == nil {
 			continue
@@ -71,6 +79,10 @@ func Build(ctx context.Context, t Target) (err error) {
 			return err
 		}
 		errs = append(errs, err)
+		if ctx.Err() != nil {
+			// No later blueprint would start an op.
+			break
+		}
 	}
 	return errors.Join(errs...)
 }
