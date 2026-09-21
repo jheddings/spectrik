@@ -27,8 +27,8 @@ jobs:
 
       - name: Install lefthook
         env:
-          # setup-go pins GOTOOLCHAIN=local to the go.mod directive, which is
-          # older than lefthook needs to build itself.
+          # setup-go pins GOTOOLCHAIN=local to the go directive, so a repository
+          # whose directive is below lefthook's minimum cannot build it.
           GOTOOLCHAIN: auto
         run: go install "github.com/evilmartians/lefthook/v2@${LEFTHOOK_VERSION}"
 
