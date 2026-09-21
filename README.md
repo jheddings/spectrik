@@ -98,6 +98,61 @@ machine "laptop" {
 can. `WithHooks` attaches callbacks for progress output, and
 `WithContinueOnError` keeps a build going past a failing spec.
 
+## Building in Go
+
+HCL is the primary way to describe configuration, but blueprints and
+projects can also be assembled in Go — useful in tests, for generated
+configuration, or when a target comes from something other than a file:
+
+```go
+dotfiles := spectrik.NewBlueprint[*Machine]("dotfiles").
+    Description("symlinks and shell config").
+    Ensure(&Symlink{Link: "~/.zshrc", Target: "~/dotfiles/zshrc"}).
+    Compose()
+
+laptop := spectrik.NewProject(&Machine{Hostname: "laptop"}, "laptop").
+    Description("Jason's laptop.").
+    Use(dotfiles).
+    Construct()
+
+err := spectrik.Build(ctx, laptop)
+```
+
+A chain ends with `Compose` for a blueprint and `Construct` for a
+project. Neither is called `Build`, which throughout this package means
+running a blueprint or project against a target.
+
+The builders produce ordinary `*Blueprint` and target values, so both
+paths meet at the same model. `Include` and `Use` behave as the HCL
+attributes of the same name, and specs added straight to a project run
+after the blueprints it uses, as inline strategy blocks do. `Op` takes an
+already-wrapped op, for the rare blueprint that mixes project types.
+
+Each strategy has a deferred variant taking a `func() Spec[P]`, for values
+that are not known while the chain is written — a flag, a config file read
+at startup, a resolved secret:
+
+```go
+spectrik.NewBlueprint[*Machine]("p10k").
+    EnsureDeferred(func() spectrik.Spec[*Machine] {
+        return &GitPull{Repo: cfg.Repo(), Dest: cfg.Dest()}
+    }).
+    Compose()
+```
+
+The spec is built when the op first runs, once, and the strategy wraps the
+resolved spec — so `Comparer`, `Exister`, and `Remover` on it still work.
+
+`NewBlueprint` is the one call that needs its project type written out,
+since nothing in its arguments implies it. A consumer with a single
+project type can wrap it once and drop the annotation everywhere:
+
+```go
+func NewBlueprint(name string) *spectrik.BlueprintBuilder[*Machine] {
+    return spectrik.NewBlueprint[*Machine](name)
+}
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
