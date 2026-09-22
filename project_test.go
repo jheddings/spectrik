@@ -162,3 +162,31 @@ func TestBuildContinuesAcrossBlueprintsOnError(t *testing.T) {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
+
+func TestBuildStopsBetweenBlueprintsWhenCancelled(t *testing.T) {
+	var log []string
+	ctx, cancel := context.WithCancel(WithContinueOnError(context.Background(), true))
+	defer cancel()
+	tgt := newLifecycleProject(&log)
+	tgt.Blueprints = []*Blueprint{
+		{Name: "first", Ops: []Op{opFunc(func(context.Context, Target) error {
+			log = append(log, "a")
+			cancel()
+			return nil
+		})}},
+		{Name: "second", Ops: []Op{recordOp{label: "b", log: &log}}},
+		{Name: "third", Ops: []Op{recordOp{label: "c", log: &log}}},
+	}
+
+	err := Build(ctx, tgt)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want %v", err, context.Canceled)
+	}
+	// One cancellation, not one per blueprint left unstarted.
+	if got, want := err.Error(), "project red: context canceled"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	if got, want := join(log), "pre,a,post"; got != want {
+		t.Fatalf("ran %s, want %s (post-build still runs)", got, want)
+	}
+}
