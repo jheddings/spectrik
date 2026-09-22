@@ -1,5 +1,7 @@
 # Configure git hooks
 ---
+# Checks come before fixers. trailing-whitespace strips CR as whitespace, so
+# mixed-line-ending can only ever fire if it reads the file first.
 pre-commit:
   jobs:
     - name: gofmt
@@ -8,22 +10,11 @@ pre-commit:
         out=$(gofmt -l {staged_files}) || exit 1
         [ -z "$out" ] || { echo "$out"; exit 1; }
 
-    # gofmt owns whitespace in Go sources, so they are excluded here.
-    - name: trailing-whitespace
-      exclude:
-        - "*.go"
-      stage_fixed: true
-      run: |
-        for f in {staged_files}; do
-          [ -f "$f" ] && grep -Iq . "$f" || continue
-          sed -E 's/[[:space:]]+$//' "$f" > "$f.lefthook~" && cat "$f.lefthook~" > "$f"
-          rm -f "$f.lefthook~"
-        done
-
     # Only the angle markers are matched; a bare ======= is a setext heading.
     - name: check-merge-conflict
       run: |
-        found=$(grep -lIE '^(<{7}|>{7}|\|{7}) ' {staged_files}) || exit 0
+        found=$(grep -lIE -- '^(<{7}|>{7}|\|{7}) ' {staged_files}); st=$?
+        [ "$st" -le 1 ] || { echo "grep failed with status $st"; exit 1; }
         [ -z "$found" ] || { echo "$found"; exit 1; }
 
     # No file template: a case conflict is between two paths, and the other
@@ -32,3 +23,80 @@ pre-commit:
       run: |
         dupes=$(git ls-files | tr 'A-Z' 'a-z' | sort | uniq -d)
         [ -z "$dupes" ] || { echo "$dupes"; exit 1; }
+
+    # No file template: the limit applies to files entering the repository,
+    # not to whatever a commit happens to touch. A repository that vendors
+    # large assets would otherwise fail on every run, forever, and could not
+    # fix it locally because this config is managed.
+    - name: check-added-large-files
+      run: |
+        git diff --cached --name-only --diff-filter=A 2>/dev/null |
+          while IFS= read -r f; do
+            case "$f" in -*) f="./$f" ;; esac
+            [ -f "$f" ] && [ ! -L "$f" ] || continue
+            sz=$(wc -c < "$f")
+            [ "$sz" -le 512000 ] || { echo "$f is $sz bytes (limit 512000)"; exit 1; }
+          done
+
+    - name: detect-private-key
+      run: |
+        found=$(grep -lIE -- '-----BEGIN (RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)? ?PRIVATE KEY' {staged_files}); st=$?
+        [ "$st" -le 1 ] || { echo "grep failed with status $st"; exit 1; }
+        [ -z "$found" ] || { echo "private key in: $found"; exit 1; }
+
+    - name: mixed-line-ending
+      run: |
+        found=$(grep -lIU -- "$(printf '\r')" {staged_files}); st=$?
+        [ "$st" -le 1 ] || { echo "grep failed with status $st"; exit 1; }
+        [ -z "$found" ] || { echo "CRLF line endings in: $found"; exit 1; }
+
+    # gofmt owns whitespace in Go sources, so they are excluded here. The
+    # -L guard matters: [ -f ] follows a symlink and the rewrite below would
+    # then write through it, outside the repository.
+    - name: trailing-whitespace
+      exclude:
+        - "*.go"
+      stage_fixed: true
+      run: |
+        for f in {staged_files}; do
+          # sed, rm and tail have no --, and GNU getopt permutes: it finds a
+          # leading-dash path even after the expression. Unnormalized, these
+          # pass on BSD and fail on the runner.
+          case "$f" in -*) f="./$f" ;; esac
+          [ -f "$f" ] && [ ! -L "$f" ] && grep -Iq -- . "$f" || continue
+          sed -E 's/[[:blank:]]+$//' "$f" > "$f.lefthook~" && cat "$f.lefthook~" > "$f"
+          rm -f "$f.lefthook~"
+        done
+
+    - name: end-of-file-fixer
+      exclude:
+        - "*.go"
+      stage_fixed: true
+      run: |
+        for f in {staged_files}; do
+          case "$f" in -*) f="./$f" ;; esac
+          [ -f "$f" ] && [ ! -L "$f" ] && grep -Iq -- . "$f" || continue
+          if [ -n "$(tail -c1 "$f")" ]; then printf '\n' >> "$f"; fi
+        done
+
+    # CI runs this hook on main, so the guard has to stand down there.
+    - name: no-commit-to-main
+      skip:
+        - run: test -n "$CI"
+      run: |
+        branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+        [ "$branch" != "main" ] || { echo "refusing to commit on main"; exit 1; }
+
+commit-msg:
+  jobs:
+    # git writes Revert and Merge subjects itself, and rebase --autosquash
+    # writes the fixup! forms, so all of them are exempt.
+    - name: conventional-commit
+      run: |
+        subject=$(head -1 "{1}")
+        case "$subject" in
+          Revert\ *|Merge\ *|fixup!\ *|squash!\ *|amend!\ *) exit 0 ;;
+        esac
+        printf '%s\n' "$subject" \
+          | grep -qE '^(feat|fix|chore|docs|refactor|test|style|perf)(\([a-z0-9._-]+\))?!?: .+' \
+          || { echo "not a Conventional Commits subject: $subject"; exit 1; }
