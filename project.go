@@ -34,7 +34,8 @@ type PostBuilder interface {
 // Build runs the target's lifecycle hooks and every blueprint in order. It
 // stops at the first failing blueprint unless the context carries
 // ContinueOnError, in which case every blueprint runs and the failures are
-// returned joined.
+// returned joined. A PreBuild or PostBuild failure is also reported to the
+// context's LifecycleFailed hook.
 //
 // Build checks ctx before each blueprint, as Blueprint.Build does before
 // each op, so a cancelled build stops at the next op boundary and reports
@@ -49,18 +50,21 @@ type PostBuilder interface {
 // outer struct.
 func Build(ctx context.Context, t Target) (err error) {
 	base := t.Base()
+	h := hooksFrom(ctx)
 
 	if post, ok := t.(PostBuilder); ok {
 		defer func() {
 			if perr := post.PostBuild(ctx); perr != nil {
-				err = errors.Join(err, fmt.Errorf("project %s: post-build: %w", base.Name, perr))
+				h.lifecycleFailed(t, StagePostBuild, perr)
+				err = errors.Join(err, fmt.Errorf("project %s: %s: %w", base.Name, StagePostBuild, perr))
 			}
 		}()
 	}
 
 	if pre, ok := t.(PreBuilder); ok {
 		if err := pre.PreBuild(ctx); err != nil {
-			return fmt.Errorf("project %s: pre-build: %w", base.Name, err)
+			h.lifecycleFailed(t, StagePreBuild, err)
+			return fmt.Errorf("project %s: %s: %w", base.Name, StagePreBuild, err)
 		}
 	}
 

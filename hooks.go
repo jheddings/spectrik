@@ -13,10 +13,24 @@ type Event struct {
 	Target   Target
 }
 
+// Stage names a part of a build that runs outside any spec.
+type Stage string
+
+// The stages a LifecycleFailed hook can report.
+const (
+	StagePreBuild  Stage = "pre-build"
+	StagePostBuild Stage = "post-build"
+)
+
 // Hooks is a set of optional callbacks fired by strategies as they run,
 // in the style of net/http/httptrace.ClientTrace. Any field may be nil.
 // Every run fires SpecStart first and SpecFinish last; exactly one of
 // SpecApplied, SpecRemoved, SpecSkipped, or SpecFailed fires in between.
+//
+// LifecycleFailed is fired by Build, not by a strategy, when a target's
+// PreBuild or PostBuild returns an error. Together with SpecFailed it
+// accounts for every failure Build returns, so a consumer reporting
+// results needs Build's error only to learn whether the build failed.
 //
 // Ops run one at a time, in order, on the goroutine that called Build, and
 // hooks are called from that same goroutine. A Hooks value therefore needs
@@ -28,6 +42,8 @@ type Hooks struct {
 	SpecSkipped func(e Event, reason string)
 	SpecFailed  func(e Event, err error)
 	SpecFinish  func(Event)
+
+	LifecycleFailed func(t Target, stage Stage, err error)
 }
 
 // WithHooks returns a context whose strategy runs report to h.
@@ -75,5 +91,11 @@ func (h *Hooks) failed(e Event, err error) {
 func (h *Hooks) finish(e Event) {
 	if h != nil && h.SpecFinish != nil {
 		h.SpecFinish(e)
+	}
+}
+
+func (h *Hooks) lifecycleFailed(t Target, stage Stage, err error) {
+	if h != nil && h.LifecycleFailed != nil {
+		h.LifecycleFailed(t, stage, err)
 	}
 }
