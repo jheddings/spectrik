@@ -1,6 +1,6 @@
 module github.com/jheddings/spectrik
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/hashicorp/hcl/v2 v2.25.0
