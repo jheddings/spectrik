@@ -10,16 +10,15 @@ tags: [release, tags, go-modules, proxy, silent-failure]
 
 `proxy.golang.org` serves `v1.0.0` of this module, and it is the Python package's tree
 (commit `1c1ff84`, "bump version to 1.0.0"). The tag was deleted from GitHub, but the
-proxy keeps every version it has seen. Before the retraction, `go get -u`, `@latest`, and
-dependency bots resolved to it and moved Go consumers onto a tree with no Go code in it.
+proxy keeps every version it has seen. Before the retraction, `go get -u`, `@latest`,
+and dependency bots resolved to it and moved Go consumers onto a tree with no Go code.
 
 **Why it matters:** Go reads retractions only from the go.mod of the highest version, so
 a `retract` in a v0.x release does nothing while v1.0.0 exists. The fix is
 `retract [v1.0.0, v1.0.1]` in `go.mod`, carried by a `v1.0.1` tag that sits on a commit
 **off `main`**. If it sat on `main`, `just release` would derive the next version from
 v1.0.1 rather than from the v0.x line. That hand-made tag was a one-time,
-operator-approved exception to
-[version tags are created only by just release](version-tags-are-created-only-by-just-release.md).
+operator-approved exception to `version-tags-are-created-only-by-just-release.md`.
 
 **What to do:**
 - Keep the `retract` directive in `go.mod`.
