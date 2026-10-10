@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -266,5 +267,67 @@ func TestWithNilHooksKeepsExistingHooks(t *testing.T) {
 	}
 	if applied != 1 {
 		t.Fatalf("SpecApplied called %d times, want 1", applied)
+	}
+}
+
+func TestWithHooksLayersLifecycleFailed(t *testing.T) {
+	var calls []string
+	note := func(name string) *Hooks {
+		return &Hooks{LifecycleFailed: func(_ Target, stage Stage, err error) {
+			calls = append(calls, name+":"+string(stage)+":"+err.Error())
+		}}
+	}
+	ctx := WithHooks(context.Background(), note("outer"))
+	ctx = WithHooks(ctx, note("inner"))
+
+	var log []string
+	tgt := newLifecycleProject(&log)
+	tgt.preErr = errors.New("no token")
+	tgt.postErr = errors.New("cleanup failed")
+	_ = Build(ctx, tgt)
+
+	want := "inner:pre-build:no token,outer:pre-build:no token," +
+		"inner:post-build:cleanup failed,outer:post-build:cleanup failed"
+	if got := join(calls); got != want {
+		t.Fatalf("hooks = %s, want %s", got, want)
+	}
+}
+
+// TestLayerChainsEveryHook guards against a field being added to Hooks
+// without being chained in layer, which silently drops it from both sets
+// as soon as a second WithHooks call is made.
+func TestLayerChainsEveryHook(t *testing.T) {
+	typ := reflect.TypeFor[Hooks]()
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		if field.Type.Kind() != reflect.Func {
+			continue
+		}
+		t.Run(field.Name, func(t *testing.T) {
+			var calls []string
+			hooks := func(name string) *Hooks {
+				h := &Hooks{}
+				fn := reflect.MakeFunc(field.Type, func([]reflect.Value) []reflect.Value {
+					calls = append(calls, name)
+					return nil
+				})
+				reflect.ValueOf(h).Elem().Field(i).Set(fn)
+				return h
+			}
+
+			layered := reflect.ValueOf(layer(hooks("first"), hooks("second"))).Elem().Field(i)
+			if layered.IsNil() {
+				t.Fatalf("layer drops %s", field.Name)
+			}
+			args := make([]reflect.Value, field.Type.NumIn())
+			for j := range args {
+				args[j] = reflect.Zero(field.Type.In(j))
+			}
+			layered.Call(args)
+
+			if got, want := join(calls), "first,second"; got != want {
+				t.Fatalf("%s calls = %s, want %s", field.Name, got, want)
+			}
+		})
 	}
 }
