@@ -190,3 +190,87 @@ func TestBuildStopsBetweenBlueprintsWhenCancelled(t *testing.T) {
 		t.Fatalf("ran %s, want %s (post-build still runs)", got, want)
 	}
 }
+
+// lifecycleRecorder captures LifecycleFailed and SpecFailed calls.
+type lifecycleRecorder struct {
+	calls   []string
+	targets []Target
+	errs    []error
+}
+
+func (r *lifecycleRecorder) hooks() *Hooks {
+	return &Hooks{
+		LifecycleFailed: func(t Target, stage Stage, err error) {
+			r.calls = append(r.calls, string(stage)+":"+err.Error())
+			r.targets = append(r.targets, t)
+			r.errs = append(r.errs, err)
+		},
+		SpecFailed: func(e Event, err error) {
+			r.calls = append(r.calls, "spec:"+err.Error())
+		},
+	}
+}
+
+func TestLifecycleFailedReportsPreBuild(t *testing.T) {
+	var log []string
+	errPre := errors.New("no token")
+	tgt := newLifecycleProject(&log)
+	tgt.preErr = errPre
+	rec := &lifecycleRecorder{}
+
+	_ = Build(WithHooks(context.Background(), rec.hooks()), tgt)
+	if got, want := join(rec.calls), "pre-build:no token"; got != want {
+		t.Fatalf("hooks = %s, want %s", got, want)
+	}
+	if rec.errs[0] != errPre {
+		t.Fatalf("err = %v, want the PreBuild error itself", rec.errs[0])
+	}
+	if rec.targets[0] != tgt {
+		t.Fatalf("target = %v, want the target that was built", rec.targets[0])
+	}
+}
+
+func TestLifecycleFailedReportsPostBuild(t *testing.T) {
+	var log []string
+	tgt := newLifecycleProject(&log)
+	tgt.postErr = errors.New("cleanup failed")
+	rec := &lifecycleRecorder{}
+
+	_ = Build(WithHooks(context.Background(), rec.hooks()), tgt)
+	if got, want := join(rec.calls), "post-build:cleanup failed"; got != want {
+		t.Fatalf("hooks = %s, want %s", got, want)
+	}
+}
+
+func TestLifecycleFailedAndSpecFailedAccountForEveryFailure(t *testing.T) {
+	var log []string
+	tgt := newLifecycleProject(&log)
+	tgt.Blueprints[0].Ops[0] = Ensure[*lifecycleProject]{Spec: failSpec{errors.New("boom")}}
+	tgt.postErr = errors.New("cleanup failed")
+	rec := &lifecycleRecorder{}
+
+	err := Build(WithHooks(context.Background(), rec.hooks()), tgt)
+	if err == nil {
+		t.Fatal("err = nil, want the joined failures")
+	}
+	if got, want := join(rec.calls), "spec:boom,post-build:cleanup failed"; got != want {
+		t.Fatalf("hooks = %s, want %s", got, want)
+	}
+}
+
+func TestLifecycleFailedIsSilentOnSuccess(t *testing.T) {
+	var log []string
+	rec := &lifecycleRecorder{}
+
+	if err := Build(WithHooks(context.Background(), rec.hooks()), newLifecycleProject(&log)); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.calls) != 0 {
+		t.Fatalf("hooks = %s, want none", join(rec.calls))
+	}
+}
+
+// failSpec is a spec whose Apply always fails.
+type failSpec struct{ err error }
+
+func (s failSpec) Apply(context.Context, *lifecycleProject) error { return s.err }
