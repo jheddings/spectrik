@@ -72,6 +72,8 @@ func layer(first, second *Hooks) *Hooks {
 		SpecSkipped: chain2(first.SpecSkipped, second.SpecSkipped),
 		SpecFailed:  chain2(first.SpecFailed, second.SpecFailed),
 		SpecFinish:  chain(first.SpecFinish, second.SpecFinish),
+
+		LifecycleFailed: chainLifecycle(first.LifecycleFailed, second.LifecycleFailed),
 	}
 }
 
@@ -100,6 +102,21 @@ func chain2[T any](a, b func(Event, T)) func(Event, T) {
 	return func(e Event, v T) {
 		a(e, v)
 		b(e, v)
+	}
+}
+
+// chainLifecycle is chain for LifecycleFailed, which reports a target
+// rather than an event.
+func chainLifecycle(a, b func(Target, Stage, error)) func(Target, Stage, error) {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	}
+	return func(t Target, s Stage, err error) {
+		a(t, s, err)
+		b(t, s, err)
 	}
 }
 
