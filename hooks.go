@@ -31,8 +31,60 @@ type Hooks struct {
 }
 
 // WithHooks returns a context whose strategy runs report to h.
+//
+// If ctx already carries hooks, h is layered over them rather than
+// replacing them, as httptrace.WithClientTrace does: each event calls h's
+// callback first, then the existing one. This lets independent observers,
+// such as a progress display and a logger, each attach their own Hooks. A
+// nil h returns ctx unchanged.
 func WithHooks(ctx context.Context, h *Hooks) context.Context {
+	if h == nil {
+		return ctx
+	}
+	if old := hooksFrom(ctx); old != nil {
+		h = layer(h, old)
+	}
 	return context.WithValue(ctx, hooksKey, h)
+}
+
+// layer returns hooks that call first's callbacks, then second's.
+func layer(first, second *Hooks) *Hooks {
+	return &Hooks{
+		SpecStart:   chain(first.SpecStart, second.SpecStart),
+		SpecApplied: chain(first.SpecApplied, second.SpecApplied),
+		SpecRemoved: chain(first.SpecRemoved, second.SpecRemoved),
+		SpecSkipped: chain2(first.SpecSkipped, second.SpecSkipped),
+		SpecFailed:  chain2(first.SpecFailed, second.SpecFailed),
+		SpecFinish:  chain(first.SpecFinish, second.SpecFinish),
+	}
+}
+
+// chain calls a then b, either of which may be nil.
+func chain(a, b func(Event)) func(Event) {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	}
+	return func(e Event) {
+		a(e)
+		b(e)
+	}
+}
+
+// chain2 is chain for the callbacks that carry a detail beside the event.
+func chain2[T any](a, b func(Event, T)) func(Event, T) {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	}
+	return func(e Event, v T) {
+		a(e, v)
+		b(e, v)
+	}
 }
 
 // hooksFrom returns the hooks attached to ctx, or nil. All the firing

@@ -95,8 +95,9 @@ machine "laptop" {
 
 `Present`, `Ensure`, and `Absent` decide when a spec runs; `Comparer`,
 `Exister`, and `Remover` are optional interfaces a spec implements when it
-can. `WithHooks` attaches callbacks for progress output, and
-`WithContinueOnError` keeps a build going past a failing spec.
+can. `WithHooks` attaches callbacks for progress output, and calling it again
+layers another set beside the first; `WithContinueOnError` keeps a build going
+past a failing spec.
 
 ## Building in Go
 

@@ -211,3 +211,60 @@ func TestSpecPointerIsUsableAsMapKey(t *testing.T) {
 		t.Fatalf("spec pointer not found as key; keys = %v", fmt.Sprint(started))
 	}
 }
+
+func TestWithHooksLayersOverExistingHooks(t *testing.T) {
+	var calls []string
+	note := func(name string) *Hooks {
+		return &Hooks{
+			SpecStart:   func(Event) { calls = append(calls, name+":start") },
+			SpecSkipped: func(e Event, reason string) { calls = append(calls, name+":skipped") },
+			SpecFailed:  func(e Event, err error) { calls = append(calls, name+":failed") },
+			SpecFinish:  func(Event) { calls = append(calls, name+":finish") },
+		}
+	}
+	ctx := WithHooks(context.Background(), note("outer"))
+	ctx = WithHooks(ctx, note("inner"))
+	ctx = WithDryRun(ctx, true)
+
+	if err := (Ensure[*testProject]{Spec: applySpec{&spy{}}}).Run(ctx, newTarget()); err != nil {
+		t.Fatal(err)
+	}
+	want := "inner:start,outer:start,inner:skipped,outer:skipped,inner:finish,outer:finish"
+	if got := join(calls); got != want {
+		t.Fatalf("hooks = %s, want %s", got, want)
+	}
+
+	calls = nil
+	bad := Ensure[*testProject]{Spec: applySpec{&spy{applyErr: errors.New("boom")}}}
+	_ = bad.Run(WithDryRun(ctx, false), newTarget())
+	want = "inner:start,outer:start,inner:failed,outer:failed,inner:finish,outer:finish"
+	if got := join(calls); got != want {
+		t.Fatalf("hooks = %s, want %s", got, want)
+	}
+}
+
+func TestWithHooksLayersPartialHooks(t *testing.T) {
+	var applied, finished int
+	ctx := WithHooks(context.Background(), &Hooks{SpecApplied: func(Event) { applied++ }})
+	ctx = WithHooks(ctx, &Hooks{SpecFinish: func(Event) { finished++ }})
+
+	if err := (Ensure[*testProject]{Spec: applySpec{&spy{}}}).Run(ctx, newTarget()); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 || finished != 1 {
+		t.Fatalf("applied %d, finished %d; want 1 and 1", applied, finished)
+	}
+}
+
+func TestWithNilHooksKeepsExistingHooks(t *testing.T) {
+	var applied int
+	ctx := WithHooks(context.Background(), &Hooks{SpecApplied: func(Event) { applied++ }})
+	ctx = WithHooks(ctx, nil)
+
+	if err := (Ensure[*testProject]{Spec: applySpec{&spy{}}}).Run(ctx, newTarget()); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("SpecApplied called %d times, want 1", applied)
+	}
+}
