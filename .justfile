@@ -47,6 +47,14 @@ release bump="patch": preflight repo-guard
 		*) echo "Unknown bump type: {{bump}}"; exit 1 ;;
 	esac
 	VERSION="$MAJOR.$MINOR.$PATCH"
+	# The module proxy keeps every version it has seen, even after the tag is
+	# deleted, so a version it already knows can never be tagged again.
+	CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://proxy.golang.org/{{module}}/@v/v$VERSION.info" || true)
+	case "$CODE" in
+		404|410) ;;
+		200) echo "ERROR: v$VERSION is already on the Go module proxy; versions are immutable"; exit 1 ;;
+		*) echo "ERROR: could not check the Go module proxy for v$VERSION (HTTP $CODE)"; exit 1 ;;
+	esac
 	git tag -a "v$VERSION" -m "v$VERSION"
 	git push && git push --tags
 
