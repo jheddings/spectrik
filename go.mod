@@ -18,3 +18,6 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
 )
+
+// Python package tree, not this Go module; v1.0.1 exists only to retract it.
+retract [v1.0.0, v1.0.1]
