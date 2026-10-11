@@ -14,7 +14,7 @@ this.** There is no `.mdformat.toml` here, `just check` runs only `gofmt` and `g
 and no git hook checks line width, so the width is yours to hold by hand.
 
 New files get 88. **An existing file wrapped narrower keeps its own width** — match what
-is around you rather than reflowing it. `CLAUDE.md` and the older `docs/` files sit at
+is around you rather than reflowing it. `AGENTS.md` and the older `docs/` files sit at
 roughly 72 to 78, and rewrapping one to 88 turns a one-line edit into a diff across the
 whole file, burying the change you actually made.
 
