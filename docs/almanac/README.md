@@ -173,7 +173,7 @@ enforces it; match the surrounding text by hand.
 
 | If it is...                                        | It goes...                                                    |
 | -------------------------------------------------- | ------------------------------------------------------------- |
-| Designed intent — how a subsystem is meant to work | `docs/adr/`, or `CLAUDE.md § Architecture` for the core model |
+| Designed intent — how a subsystem is meant to work | `docs/adr/`, or `AGENTS.md § Architecture` for the core model |
 | A spec or implementation plan                      | `docs/specs/` for specs, `docs/plans/` for plans              |
 | The status of in-flight work                       | A GitHub issue or PR                                          |
 | Your own working preferences                       | Your agent's private memory                                   |
