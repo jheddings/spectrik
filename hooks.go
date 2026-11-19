@@ -127,6 +127,7 @@ func hooksFrom(ctx context.Context) *Hooks {
 	return h
 }
 
+// start calls SpecStart when there are hooks and it is set.
 func (h *Hooks) start(e Event) {
 	if h != nil && h.SpecStart != nil {
 		h.SpecStart(e)
