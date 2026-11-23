@@ -11,21 +11,19 @@
 go = "1.27.4"
 just = "1.59.0"
 
-# A task tagged "check" is a check: the factory runs it on every change, and
-# only a failing check counts as a fault. Any other task but setup is a
-# command, offered to the hands that change the work.
+# A task tagged "check" is one the factory runs itself on every change and
+# holds the work to. This repository's CI already runs these on every pull
+# request, so none is tagged: each is a command, which a hand runs when it
+# chooses, and a Fitter may show a fault with any of them.
 
 [tasks.build]
 description = "Compile every package"
 run = "go build ./..."
-tags = ["check"]
 
 [tasks.check]
 description = "gofmt and go vet"
 run = "just check"
-tags = ["check"]
 
 [tasks.test]
 description = "Unit tests with the race detector"
 run = "just test"
-tags = ["check"]
